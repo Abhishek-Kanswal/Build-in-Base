@@ -24,8 +24,8 @@ const FacebookIcon = () => (
   </svg>
 )
 
-const PlusIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+const PlusIcon = ({ className }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className || ''}`} fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
     <path d="M12 3v18m9-9H3m15.364-6.364l-12.728 12.728M21.364 18.364L8.636 5.636" strokeLinecap="round" strokeLinejoin="round"></path>
   </svg>
 )
