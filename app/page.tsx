@@ -1,33 +1,47 @@
-import Image from "next/image";
+import { AppSidebar } from "@/components/app-sidebar"
+import { SiteHeader } from "@/components/site-header"
+import ChatInput from "@/components/chatInput"
+import { SidebarToggle } from "@/components/sidebar-toggle"
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
+import { createClient } from "@/lib/supabase/server"
 
-export default function Home() {
+export default async function Page() {
+  const supabase = await createClient()
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser()
+
+  const user = authUser
+    ? {
+      name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split("@")[0] || "User",
+      email: authUser.email || "",
+      avatar: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || "",
+    }
+    : null
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-center gap-20 py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            Launching Soon...
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Keep an eye on our X account for updates and launching date.
-          </p>
+    <div className="[--header-height:calc(--spacing(16))]">
+      <SidebarProvider className="flex flex-col">
+        <SiteHeader user={user} />
+        <div className="flex flex-1">
+          <AppSidebar />
+          <SidebarInset>
+            <div className="flex flex-1 flex-col border-t border-border/40 gap-4 p-4">
+              <div className="bg-[#18181B] min-h-[100vh] flex-1 rounded-xl md:min-h-min flex flex-col relative">
+                <div className="absolute top-4 left-4">
+                  <SidebarToggle />
+                </div>
+                <div className="flex-1 flex items-center justify-center -mt-36">
+                  <ChatInput />
+                </div>
+              </div>
+            </div>
+          </SidebarInset>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://x.com/BuildInBaseAI"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              src="/x.svg"
-              alt="X"
-              width={24}
-              height={24}
-            />
-          </a>
-        </div>
-      </main>
+      </SidebarProvider>
     </div>
-  );
+  )
 }
