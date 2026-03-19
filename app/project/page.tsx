@@ -5,28 +5,64 @@ import {
     ChevronDown, Lock, Play, Cloud, Settings, Download, Share,
     ChevronLeft, ChevronRight, RotateCw, Smartphone, Monitor, Maximize2,
     CodeXml, X, Box, Globe, FileCode2, Folder, FolderOpen, FileJson,
-    Plus, MoreHorizontal, TerminalSquare
+    Plus, MoreHorizontal, TerminalSquare, ExternalLink, Github, Loader2
 } from "lucide-react"
 
 import { PromptInputBox } from "@/components/ai-prompt-box"
 import { Button } from "@/components/ui/button"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { createClient } from "@/lib/supabase/client"
 import Editor from "@monaco-editor/react"
+import Breadcrumb from "@/components/breadcrumb"
 
 export default function ProjectPage() {
     const [sidebarWidth, setSidebarWidth] = useState(550)
     const [isDragging, setIsDragging] = useState(false)
     const [user, setUser] = useState<{ name: string; email: string; avatar: string } | null>(null)
+    const [selectedVersion, setSelectedVersion] = useState("v1.0.0")
+    const [isCommitting, setIsCommitting] = useState(false)
 
     // View state: 'preview' or 'code'
     const [activeView, setActiveView] = useState<'preview' | 'code'>('code')
+
+    // Preview device state: 'desktop' or 'mobile'
+    const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
+
     // Terminal toggle state
     const [isTerminalOpen, setIsTerminalOpen] = useState(false)
 
     // Simple toggle states for the mock file explorer
     const [isAppOpen, setIsAppOpen] = useState(true)
     const [isComponentsOpen, setIsComponentsOpen] = useState(true)
+
+    // State for mock open tabs
+    const [openFiles, setOpenFiles] = useState([
+        { id: 'synthetix-footer.tsx', name: 'synthetix-footer.tsx', type: 'code' },
+        { id: 'globals.css', name: 'globals.css', type: 'code' }
+    ])
+    const [activeFile, setActiveFile] = useState('synthetix-footer.tsx')
+
+    const handleOpenFile = (fileName: string, type: 'code' | 'json' = 'code') => {
+        if (!openFiles.find(f => f.id === fileName)) {
+            setOpenFiles([...openFiles, { id: fileName, name: fileName, type }])
+        }
+        setActiveFile(fileName)
+    }
+
+    const handleCloseFile = (e: React.MouseEvent, fileName: string) => {
+        e.stopPropagation()
+        const newFiles = openFiles.filter(f => f.id !== fileName)
+        setOpenFiles(newFiles)
+        if (activeFile === fileName) {
+            setActiveFile(newFiles.length > 0 ? newFiles[newFiles.length - 1].id : '')
+        }
+    }
 
     const defaultCode = `'use client'
 
@@ -91,6 +127,14 @@ export default function SynthetixFooter() {
         });
     }
 
+    const handleCommitToGithub = async () => {
+        setIsCommitting(true);
+        // Simulate a commit API call delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setIsCommitting(false);
+        console.log("Committed to GitHub successfully!");
+    }
+
     useEffect(() => {
         const supabase = createClient()
         supabase.auth.getUser().then(({ data: { user: authUser } }) => {
@@ -128,19 +172,36 @@ export default function SynthetixFooter() {
         <div className={`flex flex-col h-screen w-full bg-[#121212] text-neutral-100 font-sans antialiased tracking-tight selection:bg-neutral-500/30 overflow-hidden ${isDragging ? 'select-none cursor-col-resize' : ''}`}>
 
             {/* Top Global Header */}
-            <header className="h-14 flex items-center justify-between px-4 bg-[#171717] border-b border-[#262626] shrink-0">
+            <header className="h-14 flex items-center justify-between px-4 bg-[#171717] border-b border-[#262626] shrink-0 relative">
                 <div className="flex items-center gap-4">
-                    {/* Workspace Selector */}
-                    <div className="flex items-center gap-3">
-                        <div className="font-bold text-xl tracking-tighter flex items-center text-white">
-                            v<span className="text-[17px] -ml-0.5 mt-0.5">0</span>
-                        </div>
-                        <span className="text-neutral-600 font-light text-xl">/</span>
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-full bg-neutral-600" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.4) 1px, transparent 1px)', backgroundSize: '3px 3px' }} />
-                            <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
-                        </div>
-                    </div>
+                    <Breadcrumb>
+                        <Breadcrumb.Item className="text-sm text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors">Projects</Breadcrumb.Item>
+                        <Breadcrumb.Divider className="text-neutral-500 w-3.5 h-3.5" />
+                        <Breadcrumb.Item active className="text-sm text-neutral-100">Synthetix Website</Breadcrumb.Item>
+                    </Breadcrumb>
+                </div>
+
+                {/* Middle Area: Version Selector */}
+                <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 text-neutral-400 hover:text-neutral-200 hover:bg-[#262626] font-medium flex items-center gap-1.5 focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-[#262626] data-[state=open]:text-neutral-200 transition-colors">
+                                {selectedVersion}
+                                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="center" className="bg-[#171717] border-[#262626] text-neutral-200 min-w-[120px]">
+                            <DropdownMenuItem className="hover:bg-[#262626] focus:bg-[#262626] cursor-pointer" onClick={() => setSelectedVersion("v1.0.0")}>
+                                v1.0.0
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="hover:bg-[#262626] focus:bg-[#262626] cursor-pointer" onClick={() => setSelectedVersion("v1.0.1")}>
+                                v1.0.1
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="hover:bg-[#262626] focus:bg-[#262626] cursor-pointer" onClick={() => setSelectedVersion("v2.0.0")}>
+                                v2.0.0
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
 
                 {/* Right Area */}
@@ -148,8 +209,15 @@ export default function SynthetixFooter() {
                     <Button variant="outline" size="sm" className="h-9 text-sm font-medium border-[#262626] text-neutral-300 hover:text-white hover:bg-[#262626]/50 transition-colors bg-transparent">
                         Settings
                     </Button>
-                    <Button variant="outline" size="sm" className="h-9 text-sm font-medium border-[#262626] text-neutral-300 hover:text-white hover:bg-[#262626]/50 transition-colors bg-transparent">
-                        Share
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCommitToGithub}
+                        disabled={isCommitting}
+                        className="h-9 text-sm font-medium border-[#262626] text-neutral-300 hover:text-white hover:bg-[#262626]/50 transition-colors bg-transparent flex items-center gap-1.5 px-3"
+                    >
+                        {isCommitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Github className="w-3.5 h-3.5" />}
+                        {isCommitting ? "Committing..." : "Commit"}
                     </Button>
                     <Button size="sm" className="h-9 text-sm font-medium bg-white text-black hover:bg-neutral-200 transition-colors flex items-center gap-1.5 px-4">
                         <Globe className="w-4 h-4" /> Publish
@@ -270,19 +338,51 @@ export default function SynthetixFooter() {
                                         <button className="text-neutral-500 hover:text-neutral-300 p-1.5 rounded-md hover:bg-[#262626]/50 transition-colors"><ChevronRight className="w-4 h-4" /></button>
                                         <button className="text-neutral-500 hover:text-neutral-300 p-1.5 rounded-md hover:bg-[#262626]/50 transition-colors"><RotateCw className="w-4 h-4" /></button>
                                     </div>
-                                    <div className="flex-1 bg-[#121212] border border-[#262626] rounded-md h-8 flex items-center px-3 shadow-inner">
-                                        <Lock className="w-3 h-3 text-neutral-500 mr-2" />
-                                        <span className="text-neutral-400 text-xs font-medium">localhost:3000</span>
+
+                                    {/* Updated Address Bar with Redirect Icon */}
+                                    <div className="flex-1 bg-[#121212] border border-[#262626] rounded-md h-8 flex items-center justify-between px-3 shadow-inner">
+                                        <div className="flex items-center">
+                                            <Lock className="w-3 h-3 text-neutral-500 mr-2" />
+                                            <span className="text-neutral-400 text-xs font-medium">localhost:3000</span>
+                                        </div>
+                                        <button className="text-neutral-500 hover:text-neutral-300 transition-colors" title="Open in new tab">
+                                            <ExternalLink className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+
+                                    {/* PC and Mobile Viewport Toggles */}
+                                    <div className="flex items-center gap-1.5 ml-2">
+                                        <button
+                                            onClick={() => setPreviewMode('mobile')}
+                                            className={`p-1.5 rounded-md transition-colors ${previewMode === 'mobile' ? 'text-neutral-200 bg-[#262626]' : 'text-neutral-500 hover:text-neutral-300 hover:bg-[#262626]/50'}`}
+                                            title="Mobile view"
+                                        >
+                                            <Smartphone className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => setPreviewMode('desktop')}
+                                            className={`p-1.5 rounded-md transition-colors ${previewMode === 'desktop' ? 'text-neutral-200 bg-[#262626]' : 'text-neutral-500 hover:text-neutral-300 hover:bg-[#262626]/50'}`}
+                                            title="Desktop view"
+                                        >
+                                            <Monitor className="w-4 h-4" />
+                                        </button>
                                     </div>
                                 </div>
 
-                                {/* Canvas */}
-                                <div className="flex-1 bg-white m-4 rounded-lg shadow-sm border border-neutral-200 overflow-hidden flex items-center justify-center">
-                                    <div className="text-center">
-                                        <div className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                            <Box className="w-6 h-6 text-neutral-400" />
+                                {/* Canvas Wrapper for Dynamic Resizing */}
+                                <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
+                                    <div
+                                        className={`bg-white rounded-lg shadow-sm border border-neutral-200 overflow-hidden flex items-center justify-center transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${previewMode === 'mobile'
+                                            ? 'w-[375px] h-[812px] flex-none' // Mobile Dimensions
+                                            : 'w-full h-full' // Desktop Dimensions
+                                            }`}
+                                    >
+                                        <div className="text-center">
+                                            <div className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                <Box className="w-6 h-6 text-neutral-400" />
+                                            </div>
+                                            <p className="text-neutral-500 font-medium">Preview Canvas</p>
                                         </div>
-                                        <p className="text-neutral-500 font-medium">Preview Canvas</p>
                                     </div>
                                 </div>
                             </div>
@@ -300,7 +400,7 @@ export default function SynthetixFooter() {
                                             <button className="p-1 text-neutral-500 hover:text-neutral-300 hover:bg-[#262626]/50 rounded"><MoreHorizontal className="w-3.5 h-3.5" /></button>
                                         </div>
                                     </div>
-                                    <div className="flex-1 overflow-y-auto py-2">
+                                    <div className="flex-1 overflow-y-auto py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
                                         {/* Mock File Tree */}
                                         <div className="flex flex-col">
                                             {/* App Folder */}
@@ -314,15 +414,15 @@ export default function SynthetixFooter() {
                                             </div>
                                             {isAppOpen && (
                                                 <div className="flex flex-col">
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> globals.css
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> layout.tsx
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> page.tsx
-                                                    </div>
+                                                    {['globals.css', 'layout.tsx', 'page.tsx'].map(fileName => (
+                                                        <div
+                                                            key={fileName}
+                                                            onClick={() => handleOpenFile(fileName, 'code')}
+                                                            className={`flex items-center gap-2 pl-9 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
+                                                        >
+                                                            <FileCode2 className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
 
@@ -337,24 +437,29 @@ export default function SynthetixFooter() {
                                             </div>
                                             {isComponentsOpen && (
                                                 <div className="flex flex-col">
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-300" /> synthetix-footer.tsx
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> synthetix-hero.tsx
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> synthetix-nav.tsx
-                                                    </div>
+                                                    {['synthetix-footer.tsx', 'synthetix-hero.tsx', 'synthetix-nav.tsx'].map(fileName => (
+                                                        <div
+                                                            key={fileName}
+                                                            onClick={() => handleOpenFile(fileName, 'code')}
+                                                            className={`flex items-center gap-2 pl-9 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
+                                                        >
+                                                            <FileCode2 className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
 
                                             {/* Root Files */}
-                                            <div className="flex items-center gap-2 pl-6 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer mt-1">
-                                                <FileJson className="w-4 h-4 text-neutral-400" /> package.json
-                                            </div>
-                                            <div className="flex items-center gap-2 pl-6 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                <FileJson className="w-4 h-4 text-neutral-400" /> tsconfig.json
+                                            <div className="mt-1">
+                                                {['package.json', 'tsconfig.json'].map(fileName => (
+                                                    <div
+                                                        key={fileName}
+                                                        onClick={() => handleOpenFile(fileName, 'json')}
+                                                        className={`flex items-center gap-2 pl-6 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
+                                                    >
+                                                        <FileJson className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>
@@ -363,59 +468,80 @@ export default function SynthetixFooter() {
                                 {/* Right Side: Editor + Terminal Wrapper */}
                                 <div className="flex-1 flex flex-col bg-[#171717] min-w-0 z-10 relative">
 
-                                    {/* Editor Tabs (Now uses #121212 to look like a track) */}
-                                    <div className="h-10 bg-[#121212] border-b border-[#262626] flex items-center shrink-0 overflow-x-auto no-scrollbar">
+                                    {/* Editor Tabs */}
+                                    <div className="h-10 bg-[#121212] border-b border-[#262626] flex items-center shrink-0 overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:h-[2px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-neutral-700 hover:[&::-webkit-scrollbar-thumb]:bg-neutral-500 [&::-webkit-scrollbar-thumb]:rounded-full">
 
-                                        {/* Active Tab */}
-                                        <div className="flex items-center gap-2 px-4 h-full bg-[#171717] text-neutral-200 text-sm font-medium cursor-pointer border-r border-[#262626] relative">
-                                            {/* Subtle top accent line */}
-                                            <div className="absolute top-0 left-0 right-0 h-[2px] bg-neutral-400" />
-                                            <FileCode2 className="w-4 h-4 text-neutral-300" />
-                                            synthetix-footer.tsx
-                                            <button className="ml-2 p-0.5 text-neutral-500 hover:text-neutral-300 hover:bg-[#333333] rounded transition-colors">
-                                                <X className="w-3.5 h-3.5" />
-                                            </button>
-                                            {/* Bottom cover block to perfectly blend the tab into the #171717 editor below it */}
-                                            <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-[#171717]" />
-                                        </div>
-
-                                        {/* Inactive Tab */}
-                                        <div className="flex items-center gap-2 px-4 h-full text-neutral-500 hover:text-neutral-300 hover:bg-[#171717]/50 text-sm font-medium cursor-pointer transition-colors border-r border-[#262626]">
-                                            <FileCode2 className="w-4 h-4 text-neutral-500" />
-                                            globals.css
-                                        </div>
+                                        {openFiles.map(file => (
+                                            <div
+                                                key={file.id}
+                                                onClick={() => setActiveFile(file.id)}
+                                                onMouseDown={(e) => {
+                                                    if (e.button === 1) {
+                                                        e.preventDefault();
+                                                        handleCloseFile(e, file.id);
+                                                    }
+                                                }}
+                                                className={`group flex items-center gap-2 px-4 h-full text-sm font-medium cursor-pointer border-r border-[#262626] relative transition-colors ${activeFile === file.id ? 'bg-[#171717] text-neutral-200' : 'text-neutral-500 hover:text-neutral-300 hover:bg-[#171717]/50'}`}
+                                            >
+                                                {activeFile === file.id && (
+                                                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-neutral-400" />
+                                                )}
+                                                {file.type === 'json' ? (
+                                                    <FileJson className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
+                                                ) : (
+                                                    <FileCode2 className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
+                                                )}
+                                                {file.name}
+                                                <button
+                                                    onClick={(e) => handleCloseFile(e, file.id)}
+                                                    className={`ml-2 p-0.5 rounded transition-colors ${activeFile === file.id ? 'text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]' : 'opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]'}`}
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                                {activeFile === file.id && (
+                                                    <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-[#171717]" />
+                                                )}
+                                            </div>
+                                        ))}
 
                                     </div>
 
                                     {/* Monaco Editor Component - min-h-0 prevents it from pushing terminal off screen */}
                                     <div className="flex-1 min-h-0">
-                                        <Editor
-                                            height="100%"
-                                            language="typescript"
-                                            theme="midnight-theme"
-                                            value={defaultCode}
-                                            beforeMount={handleEditorWillMount}
-                                            options={{
-                                                minimap: { enabled: false },
-                                                fontSize: 13,
-                                                fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                                                lineHeight: 22,
-                                                padding: { top: 16 },
-                                                scrollBeyondLastLine: false,
-                                                smoothScrolling: true,
-                                                cursorBlinking: "smooth",
-                                                renderLineHighlight: "all",
-                                                overviewRulerBorder: false,
-                                                hideCursorInOverviewRuler: true,
-                                                wordWrap: "on",
-                                                scrollbar: {
-                                                    verticalScrollbarSize: 8,
-                                                    horizontalScrollbarSize: 8,
-                                                    verticalHasArrows: false,
-                                                    horizontalHasArrows: false,
-                                                }
-                                            }}
-                                        />
+                                        {openFiles.length > 0 ? (
+                                            <Editor
+                                                height="100%"
+                                                language={activeFile.endsWith('.json') ? "json" : activeFile.endsWith('.css') ? "css" : "typescript"}
+                                                theme="midnight-theme"
+                                                value={defaultCode}
+                                                beforeMount={handleEditorWillMount}
+                                                options={{
+                                                    minimap: { enabled: false },
+                                                    fontSize: 13,
+                                                    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                                                    lineHeight: 22,
+                                                    padding: { top: 16 },
+                                                    scrollBeyondLastLine: false,
+                                                    smoothScrolling: true,
+                                                    cursorBlinking: "smooth",
+                                                    renderLineHighlight: "all",
+                                                    overviewRulerBorder: false,
+                                                    hideCursorInOverviewRuler: true,
+                                                    wordWrap: "on",
+                                                    scrollbar: {
+                                                        verticalScrollbarSize: 8,
+                                                        horizontalScrollbarSize: 8,
+                                                        verticalHasArrows: false,
+                                                        horizontalHasArrows: false,
+                                                    }
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex flex-col items-center justify-center text-neutral-500 bg-[#121212]">
+                                                <CodeXml className="w-12 h-12 mb-4 opacity-50" />
+                                                <p className="font-medium text-sm">Select a file to view its contents</p>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* TERMINAL PANEL */}
@@ -447,29 +573,29 @@ export default function SynthetixFooter() {
                                                 </div>
                                             </div>
 
-                                            {/* Terminal Body */}
-                                            <div className="p-4 font-mono text-sm text-neutral-300 flex-1 overflow-y-auto">
+                                            {/* Terminal Body (Monochrome / Grayscale Text) */}
+                                            <div className="p-4 font-mono text-sm text-neutral-300 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
                                                 {/* Mock Past Command */}
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-green-400 font-medium">user@panxo</span>
+                                                    <span className="text-neutral-200 font-medium">user@panxo</span>
                                                     <span className="text-neutral-500 font-bold">:</span>
-                                                    <span className="text-blue-400 font-medium">~/project</span>
+                                                    <span className="text-neutral-400 font-medium">~/project</span>
                                                     <span className="text-neutral-500 font-bold">$</span>
-                                                    <span className="text-neutral-300">npm run dev</span>
+                                                    <span className="text-white">npm run dev</span>
                                                 </div>
-                                                <div className="text-neutral-400 mb-1">&gt; project@0.1.0 dev</div>
-                                                <div className="text-neutral-400 mb-4">&gt; next dev</div>
-                                                <div className="text-green-400 mb-6">ready - started server on 0.0.0.0:3000, url: http://localhost:3000</div>
+                                                <div className="text-neutral-500 mb-1">&gt; project@0.1.0 dev</div>
+                                                <div className="text-neutral-500 mb-4">&gt; next dev</div>
+                                                <div className="text-neutral-300 mb-6">ready - started server on 0.0.0.0:3000, url: http://localhost:3000</div>
 
                                                 {/* Active Prompt */}
                                                 <div className="flex items-center gap-2 mt-2">
-                                                    <span className="text-green-400 font-medium">user@panxo</span>
+                                                    <span className="text-neutral-200 font-medium">user@panxo</span>
                                                     <span className="text-neutral-500 font-bold">:</span>
-                                                    <span className="text-blue-400 font-medium">~/project</span>
+                                                    <span className="text-neutral-400 font-medium">~/project</span>
                                                     <span className="text-neutral-500 font-bold">$</span>
                                                     <input
                                                         type="text"
-                                                        className="bg-transparent border-none outline-none text-neutral-100 flex-1 focus:ring-0"
+                                                        className="bg-transparent border-none outline-none text-white flex-1 focus:ring-0"
                                                         autoFocus
                                                     />
                                                 </div>

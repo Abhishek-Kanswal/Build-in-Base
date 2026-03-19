@@ -1,8 +1,9 @@
 import React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowUp, Paperclip, Square, X, StopCircle, Mic, Globe, BrainCog, FolderCode } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X, StopCircle, Mic, Target, ChevronDown, SquarePen } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // Utility function for className merging
 const cn = (...classes: (string | undefined | null | false)[]) => classes.filter(Boolean).join(" ");
@@ -160,38 +161,76 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-// VoiceRecorder Component
-interface VoiceRecorderProps {
-  isRecording: boolean;
-  onStartRecording: () => void;
-  onStopRecording: (duration: number) => void;
+// ✨ THE REAL VOICE VISUALIZER ✨
+interface RealVoiceVisualizerProps {
+  mediaStream: MediaStream | null;
   visualizerBars?: number;
 }
-const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
-  isRecording,
-  onStartRecording,
-  onStopRecording,
-  visualizerBars = 32,
+const RealVoiceVisualizer: React.FC<RealVoiceVisualizerProps> = ({
+  mediaStream,
+  visualizerBars = 32, // Perfect amount for a full, rich UI
 }) => {
   const [time, setTime] = React.useState(0);
-  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const [frequencies, setFrequencies] = React.useState<number[]>(new Array(visualizerBars).fill(0));
 
+  // Timer logic
   React.useEffect(() => {
-    if (isRecording) {
-      onStartRecording();
-      timerRef.current = setInterval(() => setTime((t) => t + 1), 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    const interval = setInterval(() => setTime((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Real AudioContext logic
+  React.useEffect(() => {
+    if (!mediaStream) return;
+
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(mediaStream);
+
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8; // Creates a natural, less jittery movement
+    source.connect(analyser);
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    let animationFrameId: number;
+
+    const updateFrequencies = () => {
+      analyser.getByteFrequencyData(dataArray);
+
+      const step = Math.floor(bufferLength / visualizerBars);
+      const newFrequencies = [];
+
+      // Calculate average volume for each specific bar
+      for (let i = 0; i < visualizerBars; i++) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) {
+          sum += dataArray[i * step + j];
+        }
+        const average = sum / step;
+        // Convert to percentage (0 to 100) and scale slightly for visual impact
+        newFrequencies.push((average / 255) * 100 * 1.5);
       }
-      onStopRecording(time);
-      setTime(0);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+
+      setFrequencies(newFrequencies);
+      animationFrameId = requestAnimationFrame(updateFrequencies);
     };
-  }, [isRecording, time, onStartRecording, onStopRecording]);
+
+    updateFrequencies();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      source.disconnect();
+      analyser.disconnect();
+      if (audioContext.state !== "closed") {
+        audioContext.close().catch(console.error);
+      }
+    };
+  }, [mediaStream, visualizerBars]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -200,25 +239,22 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   };
 
   return (
-    <div
-      className={cn(
-        "flex flex-col items-center justify-center w-full transition-all duration-300 py-3",
-        isRecording ? "opacity-100" : "opacity-0 h-0"
-      )}
-    >
-      <div className="flex items-center gap-2 mb-3">
+    <div className="flex items-center w-full h-full gap-4 px-2 transition-all duration-300 opacity-100">
+      <div className="flex items-center gap-2 shrink-0">
         <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-        <span className="font-mono text-sm text-white/80">{formatTime(time)}</span>
+        <span className="font-mono text-sm text-gray-300">{formatTime(time)}</span>
       </div>
-      <div className="w-full h-10 flex items-center justify-center gap-0.5 px-4">
-        {[...Array(visualizerBars)].map((_, i) => (
+
+      <div className="flex-1 h-8 flex items-center justify-center gap-1">
+        {frequencies.map((freq, i) => (
           <div
             key={i}
-            className="w-0.5 rounded-full bg-white/50 animate-pulse"
+            className="w-1.5 rounded-full bg-gradient-to-t from-[#444444] to-[#888888]"
             style={{
-              height: `${Math.max(15, Math.random() * 100)}%`,
-              animationDelay: `${i * 0.05}s`,
-              animationDuration: `${0.5 + Math.random() * 0.5}s`,
+              // Math.max keeps a minimum height of 15% so it doesn't disappear when silent
+              // Math.min caps it at 100% so it doesn't break out of the container
+              height: `${Math.min(100, Math.max(15, freq))}%`,
+              transition: "height 0.05s ease-out", // This smooths out the jumps to look like Framer
             }}
           />
         ))}
@@ -268,7 +304,7 @@ interface PromptInputContextType {
 const PromptInputContext = React.createContext<PromptInputContextType>({
   isLoading: false,
   value: "",
-  setValue: () => {},
+  setValue: () => { },
   maxHeight: 240,
   onSubmit: undefined,
   disabled: false,
@@ -391,7 +427,7 @@ const PromptInputTextarea: React.FC<PromptInputTextareaProps & React.ComponentPr
   );
 };
 
-interface PromptInputActionsProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface PromptInputActionsProps extends React.HTMLAttributes<HTMLDivElement> { }
 const PromptInputActions: React.FC<PromptInputActionsProps> = ({ children, className, ...props }) => (
   <div className={cn("flex items-center gap-2", className)} {...props}>
     {children}
@@ -423,18 +459,6 @@ const PromptInputAction: React.FC<PromptInputActionProps> = ({
   );
 };
 
-// Custom Divider Component
-const CustomDivider: React.FC = () => (
-  <div className="relative h-6 w-[1.5px] mx-1">
-    <div
-      className="absolute inset-0 bg-gradient-to-t from-transparent via-[#9b87f5]/70 to-transparent rounded-full"
-      style={{
-        clipPath: "polygon(0% 0%, 100% 0%, 100% 40%, 140% 50%, 100% 60%, 100% 100%, 0% 100%, 0% 60%, -40% 50%, 0% 40%)",
-      }}
-    />
-  </div>
-);
-
 // Main PromptInputBox Component
 interface PromptInputBoxProps {
   onSend?: (message: string, files?: File[]) => void;
@@ -443,29 +467,19 @@ interface PromptInputBoxProps {
   className?: string;
 }
 export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref: React.Ref<HTMLDivElement>) => {
-  const { onSend = () => {}, isLoading = false, placeholder = "Type your message here...", className } = props;
+  const { onSend = () => { }, isLoading = false, placeholder = "Type your message here...", className } = props;
   const [input, setInput] = React.useState("");
   const [files, setFiles] = React.useState<File[]>([]);
   const [filePreviews, setFilePreviews] = React.useState<{ [key: string]: string }>({});
   const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
   const [isRecording, setIsRecording] = React.useState(false);
-  const [showSearch, setShowSearch] = React.useState(false);
-  const [showThink, setShowThink] = React.useState(false);
-  const [showCanvas, setShowCanvas] = React.useState(false);
   const uploadInputRef = React.useRef<HTMLInputElement>(null);
   const promptBoxRef = React.useRef<HTMLDivElement>(null);
-
-  const handleToggleChange = (value: string) => {
-    if (value === "search") {
-      setShowSearch((prev) => !prev);
-      setShowThink(false);
-    } else if (value === "think") {
-      setShowThink((prev) => !prev);
-      setShowSearch(false);
-    }
-  };
-
-  const handleCanvasToggle = () => setShowCanvas((prev) => !prev);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = React.useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = React.useRef<number>(0);
+  const recognitionRef = React.useRef<any>(null);
+  const transcriptRef = React.useRef<string>("");
 
   const isImageFile = (file: File) => file.type.startsWith("image/");
 
@@ -532,25 +546,136 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
 
   const handleSubmit = () => {
     if (input.trim() || files.length > 0) {
-      let messagePrefix = "";
-      if (showSearch) messagePrefix = "[Search: ";
-      else if (showThink) messagePrefix = "[Think: ";
-      else if (showCanvas) messagePrefix = "[Canvas: ";
-      const formattedInput = messagePrefix ? `${messagePrefix}${input}]` : input;
-      onSend(formattedInput, files);
+      onSend(input, files);
       setInput("");
       setFiles([]);
       setFilePreviews({});
     }
   };
 
-  const handleStartRecording = () => console.log("Started recording");
+  const handleStartRecording = async () => {
+    if (!window.isSecureContext) {
+      console.error("Voice recording requires a secure context (HTTPS).");
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error("MediaDevices API not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+        },
+      });
+      mediaStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      recordingStartTimeRef.current = Date.now();
+      setIsRecording(true);
+      console.log("Started recording");
 
-  const handleStopRecording = (duration: number) => {
+      // Initialize Speech Recognition
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        transcriptRef.current = "";
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        // We'll append final chunks securely
+        recognition.onresult = (event: any) => {
+          let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            }
+          }
+          if (finalTranscript) {
+             const cleaned = finalTranscript.trim();
+             if (cleaned) {
+               transcriptRef.current += (transcriptRef.current ? " " : "") + cleaned;
+               setInput((prev) => (prev ? prev + " " + cleaned : cleaned));
+             }
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          // "network" and "no-speech" are transient — silently retry
+          if (event.error === 'network' || event.error === 'no-speech') {
+            console.warn(`Speech recognition: "${event.error}" — will auto-restart.`);
+          } else if (event.error === 'aborted') {
+            // User or code stopped, ignore
+          } else {
+            console.error("Speech recognition error:", event.error);
+          }
+        };
+
+        // Auto-restart recognition if it ends while the user is still recording
+        recognition.onend = () => {
+          if (recognitionRef.current) {
+            try {
+              recognition.start();
+            } catch (_) {
+              // already started or stopped, ignore
+            }
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+      } else {
+        console.warn("SpeechRecognition API not supported in this browser.");
+      }
+
+    } catch (err) {
+      console.error("Microphone access denied:", err);
+      setIsRecording(false);
+    }
+  };
+
+  const handleStopRecording = () => {
+    let duration = 0;
+    if (recordingStartTimeRef.current > 0) {
+      duration = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+    }
+
+    if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+    }
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
     console.log(`Stopped recording after ${duration} seconds`);
     setIsRecording(false);
-    onSend(`[Voice message - ${duration} seconds]`, []);
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition && !transcriptRef.current) {
+        setInput((prev) => prev ? `${prev} [Voice message - ${duration} seconds]` : `[Voice message - ${duration} seconds]`);
+    }
   };
+
+  React.useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const hasContent = input.trim() !== "" || files.length > 0;
 
@@ -563,7 +688,6 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
         onSubmit={handleSubmit}
         className={cn(
           "w-full bg-[#1F2023] border-[#444444] shadow-[0_8px_30px_rgba(0,0,0,0.24)] transition-all duration-300 ease-in-out",
-          isRecording && "border-red-500/70",
           className
         )}
         disabled={isLoading || isRecording}
@@ -602,33 +726,28 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
           </div>
         )}
 
-        <div
-          className={cn(
-            "transition-all duration-300",
-            isRecording ? "h-0 overflow-hidden opacity-0" : "opacity-100"
-          )}
-        >
-          <PromptInputTextarea
-            placeholder={
-              showSearch
-                ? "Search the web..."
-                : showThink
-                ? "Think deeply..."
-                : showCanvas
-                ? "Create on canvas..."
-                : placeholder
-            }
-            className="text-base"
-          />
-        </div>
+        <div className="relative">
+          <div
+            className={cn(
+              "transition-opacity duration-300",
+              isRecording ? "opacity-0 invisible pointer-events-none" : "opacity-100 visible"
+            )}
+          >
+            <PromptInputTextarea
+              placeholder={placeholder}
+              className="text-base"
+            />
+          </div>
 
-        {isRecording && (
-          <VoiceRecorder
-            isRecording={isRecording}
-            onStartRecording={handleStartRecording}
-            onStopRecording={handleStopRecording}
-          />
-        )}
+          <div
+            className={cn(
+              "absolute inset-0 flex items-center justify-center transition-opacity duration-300",
+              isRecording ? "opacity-100 visible" : "opacity-0 invisible pointer-events-none"
+            )}
+          >
+            {isRecording && <RealVoiceVisualizer mediaStream={mediaStreamRef.current} />}
+          </div>
+        </div>
 
         <PromptInputActions className="flex items-center justify-between gap-2 p-0 pt-2">
           <div
@@ -657,113 +776,37 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
               </button>
             </PromptInputAction>
 
-            <div className="flex items-center">
+            <PromptInputAction tooltip="Edit">
               <button
                 type="button"
-                onClick={() => handleToggleChange("search")}
-                className={cn(
-                  "rounded-full transition-all flex items-center gap-1 px-2 py-1 border h-8",
-                  showSearch
-                    ? "bg-[#1EAEDB]/15 border-[#1EAEDB] text-[#1EAEDB]"
-                    : "bg-transparent border-transparent text-[#9CA3AF] hover:text-[#D1D5DB]"
-                )}
+                className="flex h-8 w-8 text-[#9CA3AF] cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-gray-600/30 hover:text-[#D1D5DB]"
+                disabled={isRecording}
               >
-                <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                  <motion.div
-                    animate={{ rotate: showSearch ? 360 : 0, scale: showSearch ? 1.1 : 1 }}
-                    whileHover={{ rotate: showSearch ? 360 : 15, scale: 1.1, transition: { type: "spring", stiffness: 300, damping: 10 } }}
-                    transition={{ type: "spring", stiffness: 260, damping: 25 }}
-                  >
-                    <Globe className={cn("w-4 h-4", showSearch ? "text-[#1EAEDB]" : "text-inherit")} />
-                  </motion.div>
-                </div>
-                <AnimatePresence>
-                  {showSearch && (
-                    <motion.span
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-xs overflow-hidden whitespace-nowrap text-[#1EAEDB] flex-shrink-0"
-                    >
-                      Search
-                    </motion.span>
-                  )}
-                </AnimatePresence>
+                <SquarePen className="h-5 w-5 transition-colors" />
               </button>
+            </PromptInputAction>
 
-              <CustomDivider />
-
-              <button
-                type="button"
-                onClick={() => handleToggleChange("think")}
-                className={cn(
-                  "rounded-full transition-all flex items-center gap-1 px-2 py-1 border h-8",
-                  showThink
-                    ? "bg-[#8B5CF6]/15 border-[#8B5CF6] text-[#8B5CF6]"
-                    : "bg-transparent border-transparent text-[#9CA3AF] hover:text-[#D1D5DB]"
-                )}
-              >
-                <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                  <motion.div
-                    animate={{ rotate: showThink ? 360 : 0, scale: showThink ? 1.1 : 1 }}
-                    whileHover={{ rotate: showThink ? 360 : 15, scale: 1.1, transition: { type: "spring", stiffness: 300, damping: 10 } }}
-                    transition={{ type: "spring", stiffness: 260, damping: 25 }}
-                  >
-                    <BrainCog className={cn("w-4 h-4", showThink ? "text-[#8B5CF6]" : "text-inherit")} />
-                  </motion.div>
-                </div>
-                <AnimatePresence>
-                  {showThink && (
-                    <motion.span
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-xs overflow-hidden whitespace-nowrap text-[#8B5CF6] flex-shrink-0"
-                    >
-                      Think
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </button>
-
-              <CustomDivider />
-
-              <button
-                type="button"
-                onClick={handleCanvasToggle}
-                className={cn(
-                  "rounded-full transition-all flex items-center gap-1 px-2 py-1 border h-8",
-                  showCanvas
-                    ? "bg-[#F97316]/15 border-[#F97316] text-[#F97316]"
-                    : "bg-transparent border-transparent text-[#9CA3AF] hover:text-[#D1D5DB]"
-                )}
-              >
-                <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                  <motion.div
-                    animate={{ rotate: showCanvas ? 360 : 0, scale: showCanvas ? 1.1 : 1 }}
-                    whileHover={{ rotate: showCanvas ? 360 : 15, scale: 1.1, transition: { type: "spring", stiffness: 300, damping: 10 } }}
-                    transition={{ type: "spring", stiffness: 260, damping: 25 }}
-                  >
-                    <FolderCode className={cn("w-4 h-4", showCanvas ? "text-[#F97316]" : "text-inherit")} />
-                  </motion.div>
-                </div>
-                <AnimatePresence>
-                  {showCanvas && (
-                    <motion.span
-                      initial={{ width: 0, opacity: 0 }}
-                      animate={{ width: "auto", opacity: 1 }}
-                      exit={{ width: 0, opacity: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-xs overflow-hidden whitespace-nowrap text-[#F97316] flex-shrink-0"
-                    >
-                      Canvas
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 items-center gap-1.5 px-2 text-[#9CA3AF] cursor-pointer rounded-md transition-colors hover:bg-gray-600/30 hover:text-[#D1D5DB]"
+                  disabled={isRecording}
+                >
+                  <Target className="h-4 w-4" />
+                  <span className="text-sm font-medium">v0 Mini</span>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="bg-[#1F2023] border-[#333333] text-gray-200 min-w-[140px]">
+                <DropdownMenuItem className="hover:bg-[#333333] focus:bg-[#333333] cursor-pointer">
+                  <Target className="mr-2 h-4 w-4" /> v0 Mini
+                </DropdownMenuItem>
+                <DropdownMenuItem className="hover:bg-[#333333] focus:bg-[#333333] cursor-pointer text-gray-400">
+                  <Target className="mr-2 h-4 w-4" /> v0 Pro
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <PromptInputAction
@@ -771,10 +814,10 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
               isLoading
                 ? "Stop generation"
                 : isRecording
-                ? "Stop recording"
-                : hasContent
-                ? "Send message"
-                : "Voice message"
+                  ? "Stop recording"
+                  : hasContent
+                    ? "Send message"
+                    : "Voice message"
             }
           >
             <Button
@@ -785,13 +828,13 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
                 isRecording
                   ? "bg-transparent hover:bg-gray-600/30 text-red-500 hover:text-red-400"
                   : hasContent
-                  ? "bg-white hover:bg-white/80 text-[#1F2023]"
-                  : "bg-transparent hover:bg-gray-600/30 text-[#9CA3AF] hover:text-[#D1D5DB]"
+                    ? "bg-white hover:bg-white/80 text-[#1F2023]"
+                    : "bg-transparent hover:bg-gray-600/30 text-[#9CA3AF] hover:text-[#D1D5DB]"
               )}
               onClick={() => {
-                if (isRecording) setIsRecording(false);
+                if (isRecording) handleStopRecording();
                 else if (hasContent) handleSubmit();
-                else setIsRecording(true);
+                else handleStartRecording();
               }}
               disabled={isLoading && !hasContent}
             >
