@@ -7,13 +7,15 @@ import {
   Frame,
   LifeBuoy,
   Map,
-  Moon,
-  PieChart,
+  Badge,
   Send,
   Settings2,
-  SquarePen,
   SquareTerminal,
+  Command,
+  Home,
 } from "lucide-react"
+
+import { usePathname } from "next/navigation"
 
 import { NavMain } from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
@@ -21,39 +23,19 @@ import { NavSecondary } from "@/components/nav-secondary"
 import {
   Sidebar,
   SidebarContent,
+  SidebarHeader,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar"
-import { Switch } from "@/components/ui/switch"
-import { useTheme } from "next-themes"
 
 const data = {
   navMain: [
     {
-      title: "New chat",
-      url: "#",
-      icon: SquarePen,
-    },
-    {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
+      title: "Home",
+      url: "/",
+      icon: Home,
     },
     {
       title: "Models",
@@ -137,57 +119,51 @@ const data = {
     {
       name: "Design Engineering",
       url: "#",
-      icon: Frame,
+      icon: Badge,
     },
     {
       name: "Sales & Marketing",
       url: "#",
-      icon: PieChart,
+      icon: Badge,
     },
     {
       name: "Travel",
       url: "#",
-      icon: Map,
+      icon: Badge,
     },
   ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { setTheme, resolvedTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
+  const pathname = usePathname()
 
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
+  const navMainWithActive = data.navMain.map((item) => ({
+    ...item,
+    isActive: item.url === pathname || (item.url === "/" && pathname === "/"),
+  }))
 
   return (
-    <Sidebar
-      className="top-(--header-height) h-[calc(100svh-var(--header-height))]!"
-      {...props}
-    >
-      <SidebarContent className="pt-3">
-        <NavMain items={data.navMain} />
-        {/* Theme Toggle underneath Settings */}
-        <SidebarGroup className="-mt-3">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <div className="flex w-full items-center justify-between cursor-default hover:bg-transparent hover:text-inherit">
-                   <div className="flex items-center gap-2">
-                     <Moon className="size-4" />
-                     <span>Dark Mode</span>
-                   </div>
-                   {mounted && (
-                     <Switch 
-                       checked={resolvedTheme === "dark"}
-                       onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-                     />
-                   )}
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarHeader className="flex h-(--header-height) shrink-0 items-center border-b border-[#2E2F2F] px-4 block">
+        <a
+          href="/"
+          className="group inline-flex w-full items-center gap-2 transition-colors"
+        >
+          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg shadow-sm ring-1 ring-black/5">
+            <Command className="size-5" />
+          </div>
+          <div className="grid text-left leading-tight group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0 overflow-hidden transition-all duration-300 ease-in-out whitespace-nowrap">
+            <span className="truncate text-base font-semibold tracking-tight">
+              Build in Base
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              Workspace
+            </span>
+          </div>
+        </a>
+      </SidebarHeader>
+      <SidebarContent className="pt-3 group-data-[collapsible=icon]:pt-2">
+        <NavMain items={navMainWithActive} />
         <NavProjects projects={data.projects} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>

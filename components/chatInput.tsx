@@ -218,258 +218,267 @@ export default function ChatInput({
       <h1 className="text-pretty text-center font-heading font-semibold text-[29px] text-foreground tracking-tighter sm:text-[32px] md:text-[46px]">
         Prompt. Refine. Ship.
       </h1>
-      <h2 className="-my-5 pb-6 text-center text-xl text-muted-foreground">
+      <h2 className="-my-5 pb-6 text-center text-lg md:text-xl text-muted-foreground px-4 md:px-0">
         Build real, working software just by describing it
       </h2>
 
       <div className="relative z-10 flex flex-col w-full mx-auto max-w-3xl content-center">
-        <form
-          className="overflow-visible rounded-2xl border-2 border-border p-3 transition-all duration-200 focus-within:border-ring/40 focus-within:shadow-sm"
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onSubmit={handleSubmit}
-        >
-          {attachedFiles.length > 0 && (
-            <div className="relative flex w-fit items-center gap-2 mb-3 overflow-hidden">
-              {attachedFiles.map((file) => (
-                <Badge
-                  variant="outline"
-                  className="group relative h-8 max-w-30 cursor-pointer overflow-hidden text-sm transition-colors hover:bg-accent px-0"
-                  key={file.id}
-                >
-                  <span className="flex h-full items-center gap-2 overflow-hidden pl-2 font-normal">
-                    <div className="relative flex h-5 min-w-5 items-center justify-center">
-                      {file.preview ? (
-                        <Image
-                          alt={file.name}
-                          className="absolute inset-0 h-5 w-5 rounded border object-cover"
-                          src={file.preview}
-                          width={20}
-                          height={20}
-                        />
-                      ) : (
-                        <Paperclip className="opacity-60" size={16} />
-                      )}
-                    </div>
-                    <span className="inline overflow-hidden truncate pr-2 transition-all">
-                      {file.name}
-                    </span>
-                  </span>
-                  <button
-                    className="absolute right-1.5 z-10 rounded-sm p-1 text-muted-foreground opacity-0 focus-visible:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-background group-hover:opacity-100"
-                    onClick={() => handleRemoveFile(file.id)}
-                    type="button"
-                  >
-                    <X size={16} />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-          <Textarea
-            className="max-h-48 min-h-14 resize-none rounded-none border-none bg-transparent! p-0 text-base md:text-lg font-medium leading-relaxed shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0"
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            placeholder={animatedPlaceholder}
-            value={prompt}
-          />
 
-          <div className="flex items-center gap-2 mt-2">
-            <div className="flex items-center gap-1">
-              <input
-                className="sr-only"
-                multiple
-                onChange={handleFileSelect}
-                ref={fileInputRef}
-                type="file"
-              />
+        {/* --- ANIMATED BORDER WRAPPER --- */}
+        <div className="relative overflow-hidden rounded-2xl p-[2px] transition-all duration-200 focus-within:shadow-md group">
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    className="h-11 w-11 rounded-lg focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Plus className="!w-5 !h-5" strokeWidth={2} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="max-w-xs rounded-2xl p-2"
-                >
-                  <DropdownMenuGroup className="space-y-1">
-                    <DropdownMenuItem
-                      className="rounded-xl text-sm py-2.5 cursor-pointer"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Paperclip className="text-muted-foreground" size={24} strokeWidth={2} />
-                        <span>Attach Files</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <Link className="text-muted-foreground" size={24} strokeWidth={2} />
-                        <span>Import from URL</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <Clipboard className="text-muted-foreground" size={24} strokeWidth={2} />
-                        <span>Paste from Clipboard</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <FileText className="text-muted-foreground" size={24} strokeWidth={2} />
-                        <span>Use Template</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+          {/* THE SPINNING WHITE LASER */}
+          <div className="absolute inset-[-100%] animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,transparent_70%,white_100%)] opacity-80" />
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    className="h-11 w-11 rounded-lg focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <SlidersHorizontal className="!w-5 !h-5" strokeWidth={2} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="w-52 rounded-2xl p-4"
-                >
-                  <DropdownMenuGroup className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Sparkles className="text-muted-foreground" size={20} strokeWidth={2} />
-                        <Label className="text-sm">Auto-complete</Label>
-                      </div>
-                      <Switch
-                        checked={settings.autoComplete}
-                        className="scale-90"
-                        onCheckedChange={(value) =>
-                          updateSetting("autoComplete", value)
-                        }
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Play className="text-muted-foreground" size={20} strokeWidth={2} />
-                        <Label className="text-sm">Streaming</Label>
-                      </div>
-                      <Switch
-                        checked={settings.streaming}
-                        className="scale-90"
-                        onCheckedChange={(value) =>
-                          updateSetting("streaming", value)
-                        }
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <History className="text-muted-foreground" size={20} strokeWidth={2} />
-                        <Label className="text-sm">Show History</Label>
-                      </div>
-                      <Switch
-                        checked={settings.showHistory}
-                        className="scale-90"
-                        onCheckedChange={(value) =>
-                          updateSetting("showHistory", value)
-                        }
-                      />
-                    </div>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Chain Selector */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    className="h-11 rounded-lg px-2 ml-1 text-muted-foreground hover:text-foreground flex items-center gap-2 transition-colors focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/80 border border-border text-foreground shadow-sm">
-                      <Image
-                        src={selectedChain.icon}
-                        alt={selectedChain.name}
-                        width={14}
-                        height={14}
-                        className="object-contain"
-                      />
-                    </div>
-                    <ChevronDown className="!w-4 !h-4 opacity-50" strokeWidth={2} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-40 rounded-xl p-2">
-                  <DropdownMenuGroup className="space-y-1">
-                    {CHAINS.map((chain) => (
-                      <DropdownMenuItem
-                        key={chain.id}
-                        className="rounded-lg text-sm py-2 cursor-pointer font-medium flex items-center gap-3"
-                        onClick={() => setSelectedChain(chain)}
-                      >
-                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/80 border border-border/50 text-foreground">
-                          <Image
-                            src={chain.icon}
-                            alt={chain.name}
-                            width={14}
-                            height={14}
-                            className="object-contain"
-                          />
-                        </div>
-                        {chain.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className="ml-auto flex items-center gap-1">
-              <Button
-                className="h-12 w-12 rounded-xl p-0 focus-visible:ring-2 focus-visible:ring-offset-2"
-                disabled={!prompt.trim()}
-                type="submit"
-                variant="default"
-              >
-                <span className="flex items-center justify-center">
-                  <ArrowUp className="!w-4 !h-4" strokeWidth={3} />
-                </span>
-              </Button>
-            </div>
-          </div>
-
-          <div
-            className={cn(
-              "absolute inset-0 flex items-center justify-center pointer-events-none z-20 rounded-[inherit] border-2 border-border border-dashed bg-muted text-foreground text-base transition-opacity duration-200",
-              isDragOver ? "opacity-100" : "opacity-0"
-            )}
+          {/* THE MASK (YOUR FORM) */}
+          <form
+            className="relative z-10 w-full h-full overflow-visible rounded-xl bg-[#0A0A0A] p-3"
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onSubmit={handleSubmit}
           >
-            <span className="flex w-full items-center justify-center gap-2 font-medium">
-              <CirclePlus className="min-w-5" size={22} />
-              Drop files here to add as attachments
-            </span>
-          </div>
-        </form>
+            {attachedFiles.length > 0 && (
+              <div className="relative flex w-fit items-center gap-2 mb-3 overflow-hidden">
+                {attachedFiles.map((file) => (
+                  <Badge
+                    variant="outline"
+                    className="group/badge relative h-8 max-w-30 cursor-pointer overflow-hidden text-sm transition-colors hover:bg-accent px-0"
+                    key={file.id}
+                  >
+                    <span className="flex h-full items-center gap-2 overflow-hidden pl-2 font-normal">
+                      <div className="relative flex h-5 min-w-5 items-center justify-center">
+                        {file.preview ? (
+                          <Image
+                            alt={file.name}
+                            className="absolute inset-0 h-5 w-5 rounded border object-cover"
+                            src={file.preview}
+                            width={20}
+                            height={20}
+                          />
+                        ) : (
+                          <Paperclip className="opacity-60" size={16} />
+                        )}
+                      </div>
+                      <span className="inline overflow-hidden truncate pr-2 transition-all">
+                        {file.name}
+                      </span>
+                    </span>
+                    <button
+                      className="absolute right-1.5 z-10 rounded-sm p-1 text-muted-foreground opacity-0 focus-visible:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-background group-hover/badge:opacity-100"
+                      onClick={() => handleRemoveFile(file.id)}
+                      type="button"
+                    >
+                      <X size={16} />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <Textarea
+              className="max-h-48 min-h-14 resize-none rounded-none border-none bg-transparent! p-0 text-base md:text-lg font-medium leading-relaxed shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0"
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder={animatedPlaceholder}
+              value={prompt}
+            />
+
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-1">
+                <input
+                  className="sr-only"
+                  multiple
+                  onChange={handleFileSelect}
+                  ref={fileInputRef}
+                  type="file"
+                />
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="h-11 w-11 rounded-lg focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Plus className="!w-5 !h-5" strokeWidth={2} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="max-w-xs rounded-2xl p-2"
+                  >
+                    <DropdownMenuGroup className="space-y-1">
+                      <DropdownMenuItem
+                        className="rounded-xl text-sm py-2.5 cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Paperclip className="text-muted-foreground" size={24} strokeWidth={2} />
+                          <span>Attach Files</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Link className="text-muted-foreground" size={24} strokeWidth={2} />
+                          <span>Import from URL</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Clipboard className="text-muted-foreground" size={24} strokeWidth={2} />
+                          <span>Paste from Clipboard</span>
+                        </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="rounded-xl text-sm py-2.5 cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <FileText className="text-muted-foreground" size={24} strokeWidth={2} />
+                          <span>Use Template</span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="h-11 w-11 rounded-lg focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <SlidersHorizontal className="!w-5 !h-5" strokeWidth={2} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-52 rounded-2xl p-4"
+                  >
+                    <DropdownMenuGroup className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Sparkles className="text-muted-foreground" size={20} strokeWidth={2} />
+                          <Label className="text-sm">Auto-complete</Label>
+                        </div>
+                        <Switch
+                          checked={settings.autoComplete}
+                          className="scale-90"
+                          onCheckedChange={(value) =>
+                            updateSetting("autoComplete", value)
+                          }
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Play className="text-muted-foreground" size={20} strokeWidth={2} />
+                          <Label className="text-sm">Streaming</Label>
+                        </div>
+                        <Switch
+                          checked={settings.streaming}
+                          className="scale-90"
+                          onCheckedChange={(value) =>
+                            updateSetting("streaming", value)
+                          }
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <History className="text-muted-foreground" size={20} strokeWidth={2} />
+                          <Label className="text-sm">Show History</Label>
+                        </div>
+                        <Switch
+                          checked={settings.showHistory}
+                          className="scale-90"
+                          onCheckedChange={(value) =>
+                            updateSetting("showHistory", value)
+                          }
+                        />
+                      </div>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Chain Selector */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="h-11 rounded-lg px-2 ml-1 text-muted-foreground hover:text-foreground flex items-center gap-2 transition-colors focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/80 border border-border text-foreground shadow-sm">
+                        <Image
+                          src={selectedChain.icon}
+                          alt={selectedChain.name}
+                          width={14}
+                          height={14}
+                          className="object-contain"
+                        />
+                      </div>
+                      <ChevronDown className="!w-4 !h-4 opacity-50" strokeWidth={2} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-40 rounded-xl p-2">
+                    <DropdownMenuGroup className="space-y-1">
+                      {CHAINS.map((chain) => (
+                        <DropdownMenuItem
+                          key={chain.id}
+                          className="rounded-lg text-sm py-2 cursor-pointer font-medium flex items-center gap-3"
+                          onClick={() => setSelectedChain(chain)}
+                        >
+                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/80 border border-border/50 text-foreground">
+                            <Image
+                              src={chain.icon}
+                              alt={chain.name}
+                              width={14}
+                              height={14}
+                              className="object-contain"
+                            />
+                          </div>
+                          {chain.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  className="h-12 w-12 rounded-xl p-0 focus-visible:ring-2 focus-visible:ring-offset-2"
+                  disabled={!prompt.trim()}
+                  type="submit"
+                  variant="default"
+                >
+                  <span className="flex items-center justify-center">
+                    <ArrowUp className="!w-4 !h-4" strokeWidth={3} />
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                "absolute inset-0 flex items-center justify-center pointer-events-none z-20 rounded-[inherit] border-2 border-border border-dashed bg-muted text-foreground text-base transition-opacity duration-200",
+                isDragOver ? "opacity-100" : "opacity-0"
+              )}
+            >
+              <span className="flex w-full items-center justify-center gap-2 font-medium">
+                <CirclePlus className="min-w-5" size={22} />
+                Drop files here to add as attachments
+              </span>
+            </div>
+          </form>
+        </div>
       </div>
 
-      <div className="max-w-250 mx-auto flex-wrap gap-3 flex min-h-0 shrink-0 items-center justify-center">
+      <div className="max-w-[1000px] w-full px-4 md:px-0 mx-auto flex-wrap gap-2 md:gap-3 flex min-h-0 shrink-0 items-center justify-center">
         {ACTIONS.map((action) => (
           <Button
-            className="gap-3 rounded-full h-11 px-6 text-sm font-medium"
+            className="gap-2 md:gap-3 rounded-full h-9 md:h-11 px-4 md:px-6 text-xs md:text-sm font-medium"
             key={action.id}
             variant="outline"
           >

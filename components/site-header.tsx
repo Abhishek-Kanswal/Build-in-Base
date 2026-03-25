@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { Command, LogOut, BadgeCheck, CreditCard, Bell, Sparkles, Zap } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import {
   Avatar,
   AvatarFallback,
@@ -49,34 +50,16 @@ export function SiteHeader({ user }: SiteHeaderProps) {
   const initials = user ? getInitials(user.name || user.email.split("@")[0] || "U") : ""
 
   return (
-    <header className="bg-[#171717] sticky top-0 z-50 flex w-full items-center">
+    <header className="bg-[#0A0A0A] sticky top-0 z-50 flex w-full items-center border-b border-[#2E2F2F]">
       <div className="flex h-(--header-height) w-full items-center justify-between gap-2 px-4">
-        <div className="flex items-center gap-2">
-          <a
-            href="/"
-            className="group inline-flex items-center gap-3 rounded-md px-2 py-1 transition-colors"
-          >
-            <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-10 items-center justify-center rounded-lg shadow-sm ring-1 ring-black/5">
-              <Command className="size-5" />
-            </div>
-            <div className="grid text-left leading-tight">
-              <span className="truncate text-lg font-semibold tracking-tight">
-                Build in Base
-              </span>
-              <span className="truncate text-sm text-muted-foreground">
-                Workspace
-              </span>
-            </div>
-          </a>
-        </div>
-
+        <SidebarTrigger />
         {user ? (
           /* ── Logged-in: token limit + user avatar dropdown ── */
           <div className="flex items-center gap-2">
             {/* Token limit badge */}
-            <div className="flex items-center gap-2 rounded-full border border-border/40 bg-zinc-900 px-4 py-1.5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-800">
-              <div className="flex size-5 items-center justify-center rounded-full border-2 border-white/80">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
+            <div className="flex items-center gap-1.5 md:gap-2 rounded-full border border-border/40 bg-zinc-900 px-3 md:px-4 py-1.5 text-sm md:text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-800">
+              <div className="flex size-4 md:size-5 items-center justify-center rounded-full border-2 border-white/80">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
                   <path d="M5 19L19 5" />
                 </svg>
               </div>
@@ -146,19 +129,21 @@ export function SiteHeader({ user }: SiteHeaderProps) {
           </div>
         ) : (
           /* ── Logged-out: navigation buttons ── */
-          <div className="flex items-center gap-1">
-            <Button variant="ghost">
-              About
-            </Button>
-            <Button variant="ghost">
-              Features
-            </Button>
-            <Button variant="ghost">
-              Pricing
-            </Button>
-            <Button variant="ghost">
-              Sign In
-            </Button>
+          <div className="flex items-center gap-2 md:gap-1">
+            <div className="hidden md:flex items-center gap-1">
+              <Button variant="ghost">
+                About
+              </Button>
+              <Button variant="ghost">
+                Features
+              </Button>
+              <Button variant="ghost">
+                Pricing
+              </Button>
+              <Button variant="ghost">
+                Sign In
+              </Button>
+            </div>
             <Link href="/login">
               <Button className="bg-foreground text-background hover:bg-foreground/90">
                 Get started for free
