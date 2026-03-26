@@ -7,7 +7,6 @@ import {
   Frame,
   LifeBuoy,
   Map,
-  Badge,
   Send,
   Settings2,
   SquareTerminal,
@@ -115,23 +114,6 @@ const data = {
       icon: Send,
     },
   ],
-  projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: Badge,
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: Badge,
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: Badge,
-    },
-  ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -164,7 +146,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent className="pt-3 group-data-[collapsible=icon]:pt-2">
         <NavMain items={navMainWithActive} />
-        <NavProjects projects={data.projects} />
+        <NavProjects />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
     </Sidebar>

@@ -1,5 +1,7 @@
 "use client";
 
+import { createClient } from "@/lib/supabase/client";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,9 +33,52 @@ import {
   FileText,
   X,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+
+import { Dock, DockIcon } from "@/components/dock"
+
+
+const dockItems = [
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/tailwindcss-logo.webp",
+    name: "TailwindCSS",
+    href: "#tailwindcss",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/edge-logo.webp",
+    name: "Edge",
+    href: "#linear",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/motion-logo.webp",
+    name: "Motion",
+    href: "#motion",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/react-logo.webp",
+    name: "React",
+    href: "#react",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/linear-logo.webp",
+    name: "Linear",
+    href: "#linear",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/drizzle-orm-logo.webp",
+    name: "Drizzle ORM",
+    href: "#drizzle-orm",
+  },
+  {
+    src: "https://cdn.badtz-ui.com/images/components/dock/deepseek-logo.webp",
+    name: "Deepseek",
+    href: "#linear",
+  },
+]
 
 // --- Animated Placeholder Hook ---
 const useTypingEffect = (phrases: string[], typingSpeed = 50, deletingSpeed = 30, pauseDuration = 2000) => {
@@ -112,10 +157,12 @@ export default function ChatInput({
 }: {
   onSubmit?: (prompt: string, chainId: string) => void;
 }) {
+  const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [selectedChain, setSelectedChain] = useState(CHAINS[0]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize the typing effect
@@ -153,10 +200,91 @@ export default function ChatInput({
     }
   };
 
-  const submitPrompt = () => {
-    if (prompt.trim() && onSubmit) {
-      onSubmit(prompt.trim(), selectedChain.id);
-      setPrompt("");
+  const submitPrompt = async () => {
+    if (!prompt.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createClient();
+
+      // 1. Verify auth first (security)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("Not authenticated");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Generate UUID client-side for instant navigation
+      const projectId = crypto.randomUUID();
+      const trimmedPrompt = prompt.trim();
+      const tempTitle = trimmedPrompt.length > 50
+        ? trimmedPrompt.substring(0, 50) + "..."
+        : trimmedPrompt;
+
+      // 3. Navigate immediately (optimistic)
+      router.push(`/project/${projectId}`);
+
+      // 4. Fire DB inserts in background (non-blocking)
+      supabase
+        .from("projects")
+        .insert({
+          id: projectId,
+          user_id: user.id,
+          title: tempTitle,
+          chain_id: selectedChain.id,
+        })
+        .then(({ error: projectError }) => {
+          if (projectError) {
+            console.error("Failed to create project:", projectError);
+            return;
+          }
+
+          // Insert initial message
+          supabase
+            .from("messages")
+            .insert({
+              project_id: projectId,
+              user_id: user.id,
+              role: "user",
+              content: trimmedPrompt,
+            })
+            .then(({ error: msgError }) => {
+              if (msgError) console.error("Failed to create message:", msgError);
+            });
+
+          // 5. Generate smart AI title in background via /api/chat
+          fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [
+                {
+                  role: "user",
+                  content: `Generate a short project title (max 5 words, no quotes) for this prompt: "${trimmedPrompt}"`,
+                },
+              ],
+            }),
+          })
+            .then((res) => res.json())
+            .then(({ response: aiTitle }) => {
+              if (aiTitle) {
+                const cleanTitle = aiTitle.replace(/['"]/g, "").trim().substring(0, 60);
+                supabase
+                  .from("projects")
+                  .update({ title: cleanTitle })
+                  .eq("id", projectId)
+                  .then(({ error }) => {
+                    if (error) console.error("Failed to update title:", error);
+                  });
+              }
+            })
+            .catch((err) => console.error("Title generation failed:", err));
+        });
+    } catch (error) {
+      console.error("Error creating project:", error);
+      setIsSubmitting(false);
     }
   };
 
@@ -449,12 +577,16 @@ export default function ChatInput({
               <div className="ml-auto flex items-center gap-1">
                 <Button
                   className="h-12 w-12 rounded-xl p-0 focus-visible:ring-2 focus-visible:ring-offset-2"
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || isSubmitting}
                   type="submit"
                   variant="default"
                 >
                   <span className="flex items-center justify-center">
-                    <ArrowUp className="!w-4 !h-4" strokeWidth={3} />
+                    {isSubmitting ? (
+                      <Loader2 className="!w-4 !h-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="!w-4 !h-4" strokeWidth={3} />
+                    )}
                   </span>
                 </Button>
               </div>
@@ -473,19 +605,18 @@ export default function ChatInput({
             </div>
           </form>
         </div>
-      </div>
-
-      <div className="max-w-[1000px] w-full px-4 md:px-0 mx-auto flex-wrap gap-2 md:gap-3 flex min-h-0 shrink-0 items-center justify-center">
-        {ACTIONS.map((action) => (
-          <Button
-            className="gap-2 md:gap-3 rounded-full h-9 md:h-11 px-4 md:px-6 text-xs md:text-sm font-medium"
-            key={action.id}
-            variant="outline"
-          >
-            <action.icon size={20} strokeWidth={2} />
-            {action.label}
-          </Button>
-        ))}
+        <div className="mt-4 flex w-full px-2 justify-start items-center">
+          <Dock>
+            {dockItems.map((item, index) => (
+              <DockIcon
+                key={index}
+                src={item.src}
+                name={item.name}
+                href={item.href}
+              />
+            ))}
+          </Dock>
+        </div>
       </div>
     </div>
   );

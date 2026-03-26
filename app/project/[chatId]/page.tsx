@@ -1,11 +1,13 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
+import { motion } from "framer-motion"
 import {
-    ChevronDown, Lock, Play, Cloud, Settings, Download, Share,
+    ChevronDown, Lock, Play, Settings, Download, Share,
     ChevronLeft, ChevronRight, RotateCw, Smartphone, Monitor, Maximize2,
     CodeXml, X, Box, Globe, FileCode2, Folder, FolderOpen, FileJson,
-    Plus, MoreHorizontal, TerminalSquare, ExternalLink, Github, Loader2
+    Plus, MoreHorizontal, TerminalSquare, ExternalLink, Github, Loader2,
+    User, Bot, PanelLeft
 } from "lucide-react"
 
 import { PromptInputBox } from "@/components/ai-prompt-box"
@@ -20,16 +22,55 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { createClient } from "@/lib/supabase/client"
 import Editor from "@monaco-editor/react"
 import Breadcrumb from "@/components/breadcrumb"
+import { useParams } from "next/navigation"
+import { TaskWidget, type TaskData } from '@/components/ui/task-widget-disclosure-base';
+
+interface Message {
+    id: string
+    role: "user" | "assistant"
+    content: string
+    created_at: string
+}
+
+const MOCK_DATA: TaskData = {
+    title: "Design System",
+    progress: 75,
+    completedCount: 3,
+    totalCount: 4,
+    priority: "Urgent",
+    status: "In Progress",
+    subtasks: [
+        { id: '1', title: "Design Tokens", completed: true },
+        { id: '2', title: "Color System", completed: true },
+        { id: '3', title: "Type System", completed: true },
+        { id: '4', title: "Documentation", completed: false },
+    ],
+    assignees: [
+        { name: "Chloe", avatar: "https://i.pravatar.cc/150?u=chloe", color: "bg-white dark:bg-gray-900" },
+        { name: "Anna", avatar: "https://i.pravatar.cc/150?u=anna", color: "bg-white" },
+        { name: "Ramesh", avatar: "https://i.pravatar.cc/150?u=ramesh", color: "bg-white" },
+    ]
+};
 
 export default function ProjectPage() {
+    const params = useParams()
+    const chatId = params.chatId as string
+
     const [sidebarWidth, setSidebarWidth] = useState(550)
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const [isDragging, setIsDragging] = useState(false)
     const [user, setUser] = useState<{ name: string; email: string; avatar: string } | null>(null)
     const [selectedVersion, setSelectedVersion] = useState("v1.0.0")
     const [isCommitting, setIsCommitting] = useState(false)
 
+    // Chat messages
+    const [messages, setMessages] = useState<Message[]>([])
+    const [isLoadingMessages, setIsLoadingMessages] = useState(true)
+    const [projectTitle, setProjectTitle] = useState("Project")
+    const messagesEndRef = useRef<HTMLDivElement>(null)
+
     // View state: 'preview' or 'code'
-    const [activeView, setActiveView] = useState<'preview' | 'code'>('code')
+    const [activeView, setActiveView] = useState<'preview' | 'code'>('preview')
 
     // Preview device state: 'desktop' or 'mobile'
     const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
@@ -97,7 +138,6 @@ export default function SynthetixFooter() {
 
     // Setup custom Monaco theme and remove TS errors
     const handleEditorWillMount = (monaco: any) => {
-        // 1. Set the custom dark theme to #171717 (Soft Dark Grey)
         monaco.editor.defineTheme('midnight-theme', {
             base: 'vs-dark',
             inherit: true,
@@ -110,7 +150,6 @@ export default function SynthetixFooter() {
             }
         });
 
-        // 2. Tell Monaco to expect React JSX
         monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
             jsx: monaco.languages.typescript.JsxEmit.React,
             jsxFactory: 'React.createElement',
@@ -120,7 +159,6 @@ export default function SynthetixFooter() {
             target: monaco.languages.typescript.ScriptTarget.Latest,
         });
 
-        // 3. Turn off semantic validation to prevent "Cannot find module" red lines
         monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
             noSemanticValidation: true,
             noSyntaxValidation: false,
@@ -129,12 +167,12 @@ export default function SynthetixFooter() {
 
     const handleCommitToGithub = async () => {
         setIsCommitting(true);
-        // Simulate a commit API call delay
         await new Promise(resolve => setTimeout(resolve, 2000));
         setIsCommitting(false);
         console.log("Committed to GitHub successfully!");
     }
 
+    // Fetch user
     useEffect(() => {
         const supabase = createClient()
         supabase.auth.getUser().then(({ data: { user: authUser } }) => {
@@ -147,6 +185,79 @@ export default function SynthetixFooter() {
             }
         })
     }, [])
+
+    // Fetch project and messages
+    useEffect(() => {
+        if (!chatId) return
+
+        const supabase = createClient()
+
+        const fetchData = async () => {
+            setIsLoadingMessages(true)
+
+            // Fetch project title
+            const { data: project } = await supabase
+                .from("projects")
+                .select("title")
+                .eq("id", chatId)
+                .single()
+
+            if (project) {
+                setProjectTitle(project.title)
+            }
+
+            // Fetch messages
+            const { data: msgs, error } = await supabase
+                .from("messages")
+                .select("*")
+                .eq("project_id", chatId)
+                .order("created_at", { ascending: true })
+
+            if (error) {
+                console.error("Error fetching messages:", error)
+            } else {
+                setMessages(msgs || [])
+            }
+
+            setIsLoadingMessages(false)
+        }
+
+        fetchData()
+    }, [chatId])
+
+    // Scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }, [messages])
+
+    // Handle sending follow-up messages
+    const handleSendMessage = async (message: string) => {
+        if (!message.trim() || !chatId) return
+
+        const supabase = createClient()
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        if (!authUser) return
+
+        const { data: newMsg, error } = await supabase
+            .from("messages")
+            .insert({
+                project_id: chatId,
+                user_id: authUser.id,
+                role: "user",
+                content: message.trim(),
+            })
+            .select()
+            .single()
+
+        if (error) {
+            console.error("Error sending message:", error)
+            return
+        }
+
+        if (newMsg) {
+            setMessages((prev) => [...prev, newMsg])
+        }
+    }
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -175,9 +286,11 @@ export default function SynthetixFooter() {
             <header className="h-14 flex items-center justify-between px-4 bg-[#171717] border-b border-[#262626] shrink-0 relative">
                 <div className="flex items-center gap-4">
                     <Breadcrumb>
-                        <Breadcrumb.Item className="text-sm text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors">Projects</Breadcrumb.Item>
+                        <Breadcrumb.Item className="text-sm text-neutral-400 hover:text-neutral-200 cursor-pointer transition-colors">
+                            <a href="/">Projects</a>
+                        </Breadcrumb.Item>
                         <Breadcrumb.Divider className="text-neutral-500 w-3.5 h-3.5" />
-                        <Breadcrumb.Item active className="text-sm text-neutral-100">Synthetix Website</Breadcrumb.Item>
+                        <Breadcrumb.Item active className="text-sm text-neutral-100">{projectTitle}</Breadcrumb.Item>
                     </Breadcrumb>
                 </div>
 
@@ -242,29 +355,69 @@ export default function SynthetixFooter() {
             {/* Main Workspace Area */}
             <div className="flex flex-1 overflow-hidden">
 
-                {/* Left Sidebar (Chat/Prompt) */}
-                <aside
-                    style={{ width: `${sidebarWidth}px` }}
-                    className="flex flex-col bg-[#171717] shrink-0 relative"
+                {/* Left Sidebar (Chat/Prompt) with Framer Motion Animation */}
+                <motion.aside
+                    animate={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+                    transition={{ type: "spring", bounce: 0, duration: 0.5 }}
+                    className="flex flex-col bg-[#171717] shrink-0 relative overflow-hidden z-10"
                 >
-                    <div className="flex-1 overflow-y-auto" />
+                    {/* Inner wrapper with fixed width to prevent content squishing during animation */}
+                    <div style={{ width: sidebarWidth }} className="flex flex-col h-full bg-[#171717]">
+                        {/* Chat Messages Area */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
+                            {isLoadingMessages ? (
+                                <div className="flex items-center justify-center h-full">
+                                    <Loader2 className="w-6 h-6 text-neutral-500 animate-spin" />
+                                </div>
+                            ) : messages.length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-neutral-500 text-sm">
+                                    No messages yet. Start a conversation below.
+                                </div>
+                            ) : (
+                                messages.map((msg) => (
+                                    <div
+                                        key={msg.id}
+                                        className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                                    >
+                                        {msg.role === "assistant" && (
+                                            <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-neutral-700 to-neutral-600 flex items-center justify-center mt-0.5">
+                                                <Bot className="w-4 h-4 text-neutral-300" />
+                                            </div>
+                                        )}
+                                        <div
+                                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${msg.role === "user"
+                                                ? "bg-[#333333] text-neutral-100 border border-[#404040] rounded-br-md"
+                                                : "bg-[#262626] text-neutral-200 rounded-bl-md"
+                                                }`}
+                                        >
+                                            {msg.content}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
 
-                    {/* Chat Input Container */}
-                    <div className="p-4 shrink-0 bg-[#171717] border-t border-[#262626]">
-                        <div className="relative">
-                            <PromptInputBox
-                                placeholder="Ask for a follow up..."
-                                className="border-[#262626] shadow-inner w-full !bg-[#121212] focus-within:ring-1 focus-within:ring-neutral-500/30 text-neutral-100 placeholder:text-neutral-500 rounded-lg"
-                            />
+                        {/* Chat Input Container */}
+                        <div className="p-4 shrink-0 bg-[#171717] border-t border-[#262626]">
+                            <div className="relative">
+                                <PromptInputBox
+                                    placeholder="Ask for a follow up..."
+                                    className="border-[#262626] shadow-inner w-full !bg-[#121212] focus-within:ring-1 focus-within:ring-neutral-500/30 text-neutral-100 placeholder:text-neutral-500 rounded-lg"
+                                    onSend={(message) => handleSendMessage(message)}
+                                />
+                            </div>
                         </div>
                     </div>
-                </aside>
+                </motion.aside>
 
-                {/* Drag Handle Divider */}
-                <div
-                    onMouseDown={() => setIsDragging(true)}
-                    className={`w-1 cursor-col-resize shrink-0 transition-colors z-10 ${isDragging ? 'bg-neutral-500' : 'bg-[#262626] hover:bg-[#333333]'}`}
-                />
+                {/* Drag Handle Divider (Hidden when sidebar is closed) */}
+                {isSidebarOpen && (
+                    <div
+                        onMouseDown={() => setIsDragging(true)}
+                        className={`w-1 cursor-col-resize shrink-0 transition-colors z-20 ${isDragging ? 'bg-neutral-500' : 'bg-[#262626] hover:bg-[#333333]'}`}
+                    />
+                )}
 
                 {/* Right Workspace */}
                 <main className="flex-1 flex flex-col min-w-0 bg-[#121212]">
@@ -295,8 +448,16 @@ export default function SynthetixFooter() {
 
                             <div className="w-[1px] h-4 bg-[#262626] mx-1" />
 
-                            <button className="text-neutral-400 hover:text-neutral-200 p-2 rounded-md hover:bg-[#262626]/50 transition-colors ml-1">
-                                <Cloud className="w-4 h-4" />
+                            {/* Sidebar Toggle Button */}
+                            <button
+                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                className={`p-2 rounded-md transition-colors ml-1 ${!isSidebarOpen
+                                    ? 'text-neutral-200 bg-[#262626]/80'
+                                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-[#262626]/50'
+                                    }`}
+                                title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+                            >
+                                <PanelLeft className="w-4 h-4" />
                             </button>
                         </div>
 
@@ -304,8 +465,8 @@ export default function SynthetixFooter() {
                             {/* Terminal Toggle Button (Icon Only) */}
                             <button
                                 onClick={() => {
-                                    setActiveView('code'); // Switch to code view if not there
-                                    setIsTerminalOpen(!isTerminalOpen); // Toggle terminal
+                                    setActiveView('code');
+                                    setIsTerminalOpen(!isTerminalOpen);
                                 }}
                                 className={`p-2 rounded-md transition-colors ${isTerminalOpen && activeView === 'code'
                                     ? 'text-neutral-200 bg-[#262626]/80'
@@ -339,7 +500,7 @@ export default function SynthetixFooter() {
                                         <button className="text-neutral-500 hover:text-neutral-300 p-1.5 rounded-md hover:bg-[#262626]/50 transition-colors"><RotateCw className="w-4 h-4" /></button>
                                     </div>
 
-                                    {/* Updated Address Bar with Redirect Icon */}
+                                    {/* Address Bar */}
                                     <div className="flex-1 bg-[#121212] border border-[#262626] rounded-md h-8 flex items-center justify-between px-3 shadow-inner">
                                         <div className="flex items-center">
                                             <Lock className="w-3 h-3 text-neutral-500 mr-2" />
@@ -350,7 +511,7 @@ export default function SynthetixFooter() {
                                         </button>
                                     </div>
 
-                                    {/* PC and Mobile Viewport Toggles */}
+                                    {/* Viewport Toggles */}
                                     <div className="flex items-center gap-1.5 ml-2">
                                         <button
                                             onClick={() => setPreviewMode('mobile')}
@@ -369,19 +530,18 @@ export default function SynthetixFooter() {
                                     </div>
                                 </div>
 
-                                {/* Canvas Wrapper for Dynamic Resizing */}
+                                {/* Canvas */}
                                 <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
                                     <div
-                                        className={`bg-white rounded-lg shadow-sm border border-neutral-200 overflow-hidden flex items-center justify-center transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${previewMode === 'mobile'
-                                            ? 'w-[375px] h-[812px] flex-none' // Mobile Dimensions
-                                            : 'w-full h-full' // Desktop Dimensions
+                                        className={`bg-[#0A0A0A] rounded-lg shadow-sm  overflow-hidden flex items-center justify-center transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${previewMode === 'mobile'
+                                            ? 'w-[375px] h-[812px] flex-none'
+                                            : 'w-full h-full'
                                             }`}
                                     >
                                         <div className="text-center">
-                                            <div className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                <Box className="w-6 h-6 text-neutral-400" />
+                                            <div className="flex justify-center items-center">
+                                                <TaskWidget data={MOCK_DATA} />
                                             </div>
-                                            <p className="text-neutral-500 font-medium">Preview Canvas</p>
                                         </div>
                                     </div>
                                 </div>
@@ -401,7 +561,6 @@ export default function SynthetixFooter() {
                                         </div>
                                     </div>
                                     <div className="flex-1 overflow-y-auto py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
-                                        {/* Mock File Tree */}
                                         <div className="flex flex-col">
                                             {/* App Folder */}
                                             <div
@@ -506,7 +665,7 @@ export default function SynthetixFooter() {
 
                                     </div>
 
-                                    {/* Monaco Editor Component - min-h-0 prevents it from pushing terminal off screen */}
+                                    {/* Monaco Editor */}
                                     <div className="flex-1 min-h-0">
                                         {openFiles.length > 0 ? (
                                             <Editor
@@ -547,7 +706,6 @@ export default function SynthetixFooter() {
                                     {/* TERMINAL PANEL */}
                                     {isTerminalOpen && (
                                         <div className="h-64 border-t border-[#262626] bg-[#121212] flex flex-col shrink-0 z-20 animate-in slide-in-from-bottom-2 duration-200">
-                                            {/* Terminal Header */}
                                             <div className="h-9 flex items-center justify-between px-4 bg-[#171717] border-b border-[#262626]">
                                                 <div className="flex items-center gap-6 h-full">
                                                     <div className="text-[11px] font-semibold text-neutral-200 tracking-wider h-full flex items-center border-b-2 border-neutral-400 cursor-pointer">
@@ -573,9 +731,7 @@ export default function SynthetixFooter() {
                                                 </div>
                                             </div>
 
-                                            {/* Terminal Body (Monochrome / Grayscale Text) */}
                                             <div className="p-4 font-mono text-sm text-neutral-300 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
-                                                {/* Mock Past Command */}
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <span className="text-neutral-200 font-medium">user@panxo</span>
                                                     <span className="text-neutral-500 font-bold">:</span>
@@ -587,7 +743,6 @@ export default function SynthetixFooter() {
                                                 <div className="text-neutral-500 mb-4">&gt; next dev</div>
                                                 <div className="text-neutral-300 mb-6">ready - started server on 0.0.0.0:3000, url: http://localhost:3000</div>
 
-                                                {/* Active Prompt */}
                                                 <div className="flex items-center gap-2 mt-2">
                                                     <span className="text-neutral-200 font-medium">user@panxo</span>
                                                     <span className="text-neutral-500 font-bold">:</span>
