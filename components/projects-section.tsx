@@ -2,6 +2,21 @@
 
 import * as React from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
+import {
+  Copy01Icon,
+  FavouriteIcon,
+  PencilEdit02Icon,
+  Share01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { InlineDisclosureMenu } from "@/components/ui/menu";
+
+const items = [
+  { icon: <HugeiconsIcon icon={PencilEdit02Icon} />, label: "Edit" },
+  { icon: <HugeiconsIcon icon={Copy01Icon} />, label: "Duplicate" },
+  { icon: <HugeiconsIcon icon={FavouriteIcon} />, label: "Favourite" },
+  { icon: <HugeiconsIcon icon={Share01Icon} />, label: "Share" },
+];
 
 export function ProjectsSection() {
   const [projectsOpen, setProjectsOpen] = React.useState(true)

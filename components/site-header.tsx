@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { Command, LogOut, BadgeCheck, CreditCard, Bell, Sparkles, Zap } from "lucide-react"
+import { RainbowButton } from "@/components/ui/rainbow-button"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -56,6 +57,11 @@ export function SiteHeader({ user }: SiteHeaderProps) {
         {user ? (
           /* ── Logged-in: token limit + user avatar dropdown ── */
           <div className="flex items-center gap-2">
+            {/* Rainbow upgrade button */}
+            <RainbowButton variant="outline">
+              Upgrade
+            </RainbowButton>
+
             {/* Token limit badge */}
             <div className="flex items-center gap-1.5 md:gap-2 rounded-full border border-border/40 bg-zinc-900 px-3 md:px-4 py-1.5 text-sm md:text-base font-semibold text-white shadow-sm transition-colors hover:bg-zinc-800">
               <div className="flex size-4 md:size-5 items-center justify-center rounded-full border-2 border-white/80">
@@ -69,11 +75,11 @@ export function SiteHeader({ user }: SiteHeaderProps) {
             {/* User avatar dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center rounded-full ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-                  <Avatar className="h-10 w-10 cursor-pointer border-0 ring-2 ring-transparent transition-all hover:ring-white/20">
+                <button className="flex items-center rounded-lg ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                  <Avatar className="h-10 w-10 cursor-pointer rounded-lg border-0 ring-2 ring-transparent transition-all hover:ring-white/20">
                     <AvatarImage src={user.avatar} alt={user.name} />
                     <AvatarFallback
-                      className="bg-pink-500 text-transparent"
+                      className="bg-pink-500 rounded-lg text-transparent"
                       style={{
                         backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)`,
                         backgroundSize: '4px 4px'
