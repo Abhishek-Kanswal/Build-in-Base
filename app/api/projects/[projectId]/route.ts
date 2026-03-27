@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 type RouteContext = {
-  params: { projectId: string };
+  params: Promise<{ projectId: string }>;
 };
 
 export async function DELETE(_: Request, { params }: RouteContext) {
   try {
-    const { projectId } = params;
+    const { projectId } = await params;
     const supabase = await createClient();
 
     const {
