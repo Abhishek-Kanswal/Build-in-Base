@@ -131,8 +131,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           href="/"
           className="group inline-flex w-full items-center gap-2 transition-colors"
         >
-          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg shadow-sm ring-1 ring-black/5">
-            <Command className="size-5" />
+          <div className="flex aspect-square size-8 items-center justify-center min-w-8">
+            <img src="/logo.png" alt="Build in Base" className="size-8 object-contain" />
           </div>
           <div className="grid text-left leading-tight group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0 overflow-hidden transition-all duration-300 ease-in-out whitespace-nowrap">
             <span className="truncate text-base font-semibold tracking-tight">
