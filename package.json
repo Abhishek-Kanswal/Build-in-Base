@@ -9,7 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "@anthropic-ai/sdk": "^0.32.1",
     "@hugeicons/core-free-icons": "^4.0.0",
     "@hugeicons/react": "^1.1.6",
     "@monaco-editor/react": "^4.7.0",
@@ -27,10 +27,13 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.94.0",
     "@tabler/icons-react": "^3.36.1",
+    "@webcontainer/api": "^1.5.1",
+    "ansi_up": "^6.0.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.37.0",
     "geist": "^1.5.1",
+    "@shikijs/monaco": "^3.12.0",
     "lucide-react": "^0.563.0",
     "motion": "^12.38.0",
     "next": "16.1.1",
@@ -40,6 +43,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-icons": "^5.6.0",
+    "shiki": "^3.12.0",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {

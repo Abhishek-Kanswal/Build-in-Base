@@ -1,14 +1,17 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useMemo, useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
+import { AnsiUp } from 'ansi_up'
 import {
     ChevronDown, Lock, Play, Settings, Download, Share,
     ChevronLeft, ChevronRight, RotateCw, Smartphone, Monitor, Maximize2,
-    CodeXml, X, Box, Globe, FileCode2, Folder, FolderOpen, FileJson,
+    CodeXml, X, Box, Globe,
     Plus, MoreHorizontal, TerminalSquare, ExternalLink, Github, Loader2,
     User, Bot, PanelLeft, Copy, Search, GitBranch, Bug, Blocks, Sparkles
 } from "lucide-react"
+
+import { MaterialIcon } from "@/lib/material-icons"
 
 import { PromptInputBox } from "@/components/ai-prompt-box"
 import { Button } from "@/components/ui/button"
@@ -30,7 +33,11 @@ import {
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { useParams } from "next/navigation"
-import { TaskWidget, type TaskData } from '@/components/ui/task-widget-disclosure-base';
+import type { WebContainerProcess } from "@webcontainer/api"
+
+import { useWebContainer } from "@/hooks/use-webcontainer"
+import { applyBoltActionsToFiles, buildFilesFromResponses, type FileMap } from "@/lib/builder/bolt"
+import { buildWebContainerTree, fileMapToTree, type FileTreeNode } from "@/lib/builder/webcontainer"
 
 interface Message {
     id: string
@@ -38,26 +45,6 @@ interface Message {
     content: string
     created_at: string
 }
-
-const MOCK_DATA: TaskData = {
-    title: "Design System",
-    progress: 75,
-    completedCount: 3,
-    totalCount: 4,
-    priority: "Urgent",
-    status: "In Progress",
-    subtasks: [
-        { id: '1', title: "Design Tokens", completed: true },
-        { id: '2', title: "Color System", completed: true },
-        { id: '3', title: "Type System", completed: true },
-        { id: '4', title: "Documentation", completed: false },
-    ],
-    assignees: [
-        { name: "Chloe", avatar: "https://i.pravatar.cc/150?u=chloe", color: "bg-white dark:bg-gray-900" },
-        { name: "Anna", avatar: "https://i.pravatar.cc/150?u=anna", color: "bg-white" },
-        { name: "Ramesh", avatar: "https://i.pravatar.cc/150?u=ramesh", color: "bg-white" },
-    ]
-};
 
 export default function ProjectPage() {
     const params = useParams()
@@ -85,16 +72,76 @@ export default function ProjectPage() {
     // Terminal toggle state
     const [isTerminalOpen, setIsTerminalOpen] = useState(false)
 
-    // Simple toggle states for the mock file explorer
-    const [isAppOpen, setIsAppOpen] = useState(true)
-    const [isComponentsOpen, setIsComponentsOpen] = useState(true)
+    const { webcontainer, isBooting } = useWebContainer()
+    const [previewUrl, setPreviewUrl] = useState("")
+    const [isGenerating, setIsGenerating] = useState(false)
+    const [terminalLogs, setTerminalLogs] = useState<string[]>([])
+    const [filesByPath, setFilesByPath] = useState<FileMap>({})
+    const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
+        app: true,
+        components: true,
+        src: true,
+    })
 
-    // State for mock open tabs
-    const [openFiles, setOpenFiles] = useState([
-        { id: 'synthetix-footer.tsx', name: 'synthetix-footer.tsx', type: 'code' },
-        { id: 'globals.css', name: 'globals.css', type: 'code' }
-    ])
-    const [activeFile, setActiveFile] = useState('synthetix-footer.tsx')
+    const webcontainerProcessRef = useRef<WebContainerProcess | null>(null)
+    const isServerRunningRef = useRef(false)
+    const templatePromptsRef = useRef<string[]>([])
+    const templateUiPromptRef = useRef("")
+    const hasHydratedRef = useRef(false)
+
+    const [openFiles, setOpenFiles] = useState<{ id: string; name: string; type: "code" | "json" }[]>([])
+    const [activeFile, setActiveFile] = useState("")
+
+    const fileTree = useMemo(() => fileMapToTree(filesByPath), [filesByPath])
+    const activeFileContent = activeFile ? filesByPath[activeFile] ?? "" : ""
+    const ansiUp = useMemo(() => new AnsiUp(), [])
+    const shikiMonacoInitRef = useRef<Promise<void> | null>(null)
+    const activeEditorLanguage = useMemo(() => {
+        if (!activeFile) return "typescript"
+
+        if (activeFile.endsWith(".tsx")) return "tsx"
+        if (activeFile.endsWith(".jsx")) return "jsx"
+        if (activeFile.endsWith(".ts")) return "typescript"
+        if (activeFile.endsWith(".js") || activeFile.endsWith(".mjs") || activeFile.endsWith(".cjs")) return "javascript"
+        if (activeFile.endsWith(".json") || activeFile.endsWith(".jsonc")) return "json"
+        if (activeFile.endsWith(".css") || activeFile.endsWith(".scss") || activeFile.endsWith(".sass") || activeFile.endsWith(".less")) return "css"
+        if (activeFile.endsWith(".html") || activeFile.endsWith(".htm")) return "html"
+
+        return "typescript"
+    }, [activeFile])
+
+    const renderAssistantMessage = (content: string) => {
+        const paragraphs = content.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0)
+
+        return paragraphs.map((paragraph, paragraphIndex) => {
+            const lines = paragraph.split("\n")
+
+            return (
+                <p key={`paragraph-${paragraphIndex}`} className={paragraphIndex > 0 ? "mt-3" : ""}>
+                    {lines.map((line, lineIndex) => (
+                        <React.Fragment key={`line-${paragraphIndex}-${lineIndex}`}>
+                            {line}
+                            {lineIndex < lines.length - 1 && <br />}
+                        </React.Fragment>
+                    ))}
+                </p>
+            )
+        })
+    }
+
+    const appendTerminalOutput = (chunk: string) => {
+        const lines = chunk.split(/\r?\n|\r/)
+        const visibleLines = lines.filter((line) => {
+            const trimmed = line.trim()
+            if (!trimmed) return false
+            if (/^[\\|/\-]+$/.test(trimmed)) return false
+            return true
+        })
+
+        if (visibleLines.length === 0) return
+
+        setTerminalLogs((prev) => [...prev, ...visibleLines])
+    }
 
     const handleOpenFile = (fileName: string, type: 'code' | 'json' = 'code') => {
         if (!openFiles.find(f => f.id === fileName)) {
@@ -112,51 +159,10 @@ export default function ProjectPage() {
         }
     }
 
-    const defaultCode = `'use client'
+    const defaultCode = "// Generated files will appear here"
 
-export default function SynthetixFooter() {
-  return (
-    <footer className="border-t border-white/10 py-16 px-8 text-center bg-[#0a0a0c] relative">
-      <div className="font-serif italic text-4xl mb-8 inline-block">
-        Synthetix.
-      </div>
-
-      <div className="flex justify-center gap-8 mb-16">
-        <a href="#" className="text-gray-500 text-sm hover:text-white transition-colors">
-          Manifesto
-        </a>
-        <a href="#" className="text-gray-500 text-sm hover:text-white transition-colors">
-          Documentation
-        </a>
-        <a href="#" className="text-gray-500 text-sm hover:text-white transition-colors">
-          HuggingFace
-        </a>
-        <a href="#" className="text-gray-500 text-sm hover:text-white transition-colors">
-          Twitter
-        </a>
-      </div>
-
-      <div className="text-gray-600 text-xs">
-        © 2024 Synthetix Intelligence Labs. All systems operational.
-      </div>
-    </footer>
-  )
-}`
-
-    // Setup custom Monaco theme and remove TS errors
+    // Setup Monaco TypeScript compiler options and Shiki syntax highlighting.
     const handleEditorWillMount = (monaco: any) => {
-        monaco.editor.defineTheme('midnight-theme', {
-            base: 'vs-dark',
-            inherit: true,
-            rules: [],
-            colors: {
-                'editor.background': '#171717',
-                'editor.lineHighlightBackground': '#262626',
-                'editorLineNumber.foreground': '#525252',
-                'editorIndentGuide.background': '#262626',
-            }
-        });
-
         monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
             jsx: monaco.languages.typescript.JsxEmit.React,
             jsxFactory: 'React.createElement',
@@ -170,6 +176,39 @@ export default function SynthetixFooter() {
             noSemanticValidation: true,
             noSyntaxValidation: false,
         });
+    }
+
+    const initializeShikiMonaco = async (monaco: any) => {
+        if (!shikiMonacoInitRef.current) {
+            shikiMonacoInitRef.current = (async () => {
+                const [{ createHighlighter }, { shikiToMonaco }] = await Promise.all([
+                    import("shiki"),
+                    import("@shikijs/monaco"),
+                ])
+
+                const languages = ["typescript", "javascript", "json", "css", "html", "tsx", "jsx"]
+                const highlighter = await createHighlighter({
+                    themes: ["vitesse-dark"],
+                    langs: languages,
+                })
+
+                for (const languageId of languages) {
+                    if (!monaco.languages.getLanguages().some((language: any) => language.id === languageId)) {
+                        monaco.languages.register({ id: languageId })
+                    }
+                }
+
+                for (const aliasId of ["typescriptreact", "javascriptreact"]) {
+                    if (!monaco.languages.getLanguages().some((language: any) => language.id === aliasId)) {
+                        monaco.languages.register({ id: aliasId })
+                    }
+                }
+
+                shikiToMonaco(highlighter, monaco)
+            })()
+        }
+
+        await shikiMonacoInitRef.current
     }
 
     const handleCommitToGithub = async () => {
@@ -232,10 +271,243 @@ export default function SynthetixFooter() {
         fetchData()
     }, [chatId])
 
+    useEffect(() => {
+        if (isLoadingMessages || hasHydratedRef.current || messages.length === 0) {
+            return
+        }
+
+        hasHydratedRef.current = true
+        hydrateProjectFiles(messages).catch((error) => {
+            console.error("Failed to hydrate project files:", error)
+            setIsGenerating(false)
+            setMessages((prev) => [...prev, {
+                id: "error-" + Date.now(),
+                role: "assistant",
+                content: `An error occurred during generation. Please check your API keys and provider models. Details: ${error.message || String(error)}`,
+                created_at: new Date().toISOString()
+            }])
+        })
+    }, [isLoadingMessages, messages])
+
+    const prevFilesRef = useRef<FileMap>({})
+
+    useEffect(() => {
+        if (!webcontainer || Object.keys(filesByPath).length === 0) {
+            return
+        }
+
+        if (filesByPath === prevFilesRef.current) {
+            return
+        }
+
+        const run = async () => {
+            try {
+                if (isServerRunningRef.current) {
+                    const prevFiles = prevFilesRef.current;
+                    for (const [path, content] of Object.entries(filesByPath)) {
+                        if (prevFiles[path] !== content) {
+                            const dir = path.split('/').slice(0, -1).join('/');
+                            if (dir) {
+                                await webcontainer.fs.mkdir(dir, { recursive: true }).catch(() => {});
+                            }
+                            await webcontainer.fs.writeFile(path, content);
+                        }
+                    }
+                    for (const path of Object.keys(prevFiles)) {
+                        if (!(path in filesByPath)) {
+                            await webcontainer.fs.rm(path, { force: true }).catch(() => {});
+                        }
+                    }
+                    prevFilesRef.current = filesByPath;
+                    return;
+                }
+
+                // Mount new files to WebContainer. Hot reloading handles changes via Vite/Next.
+                await webcontainer.mount(buildWebContainerTree(filesByPath))
+                prevFilesRef.current = filesByPath;
+
+                isServerRunningRef.current = true
+
+                webcontainer.on("server-ready", (_port, url) => {
+                    setPreviewUrl((prev) => prev !== url ? url : prev)
+                })
+
+                setTerminalLogs(["$ npm install --no-progress --loglevel=error"])
+
+                const installProcess = await webcontainer.spawn("npm", ["install", "--no-progress", "--loglevel=error"], {
+                    env: {
+                        NPM_CONFIG_PROGRESS: "false",
+                        npm_config_progress: "false",
+                    },
+                })
+                installProcess.output.pipeTo(
+                    new WritableStream({
+                        write(data) {
+                            appendTerminalOutput(String(data))
+                        },
+                    })
+                )
+                await installProcess.exit
+
+                setTerminalLogs((prev) => [...prev, "$ npm run dev"])
+                const devProcess = await webcontainer.spawn("npm", ["run", "dev"])
+                webcontainerProcessRef.current = devProcess
+                devProcess.output.pipeTo(
+                    new WritableStream({
+                        write(data) {
+                            appendTerminalOutput(String(data))
+                        },
+                    })
+                )
+            } catch (error) {
+                console.error("Failed to run project in WebContainer", error)
+                isServerRunningRef.current = false
+            }
+        }
+
+        run()
+    }, [webcontainer, filesByPath])
+
     // Scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [messages])
+
+    const appendGeneratedFiles = (response: string) => {
+        setFilesByPath((prev) => {
+            const next = applyBoltActionsToFiles(prev, response)
+            const filePaths = Object.keys(next)
+            if (filePaths.length > 0 && !activeFile) {
+                const firstFile = filePaths[0]
+                setOpenFiles([{ id: firstFile, name: firstFile.split("/").pop() ?? firstFile, type: firstFile.endsWith(".json") ? "json" : "code" }])
+                setActiveFile(firstFile)
+            }
+            return next
+        })
+    }
+
+    const ensureTemplateContext = async (seedPrompt: string) => {
+        if (templatePromptsRef.current.length > 0 && templateUiPromptRef.current) {
+            return
+        }
+
+        const response = await fetch("/api/template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: seedPrompt }),
+        })
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Failed to get template: ${response.status} ${response.statusText} - ${errBody}`)
+        }
+
+        const data = await response.json()
+        templatePromptsRef.current = Array.isArray(data.prompts) ? data.prompts : []
+        templateUiPromptRef.current = Array.isArray(data.uiPrompts) ? data.uiPrompts[0] ?? "" : ""
+    }
+
+    const generateAssistantFromConversation = async (conversation: Message[]) => {
+        const userMessages = conversation.filter((msg) => msg.role === "user")
+        if (userMessages.length === 0) {
+            return null
+        }
+
+        await ensureTemplateContext(userMessages[0].content)
+
+        setIsGenerating(true)
+        const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: [
+                    ...templatePromptsRef.current.map((content) => ({ role: "user", content })),
+                    ...conversation.map((msg) => ({
+                        role: msg.role,
+                        content: msg.content,
+                    }))
+                ],
+            }),
+        })
+
+        setIsGenerating(false)
+
+        if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`Failed to generate response: ${response.status} ${response.statusText} - ${errBody}`)
+        }
+
+        const data = await response.json()
+        const assistantContent = data.response as string
+        appendGeneratedFiles(assistantContent)
+        return assistantContent
+    }
+
+    const hydrateProjectFiles = async (conversation: Message[]) => {
+        const userMessages = conversation.filter((msg) => msg.role === "user")
+        const assistantMessages = conversation.filter((msg) => msg.role === "assistant")
+
+        if (userMessages.length === 0) {
+            return
+        }
+
+        await ensureTemplateContext(userMessages[0].content)
+
+        if (assistantMessages.length > 0) {
+            const bootFiles = buildFilesFromResponses([
+                templateUiPromptRef.current,
+                ...assistantMessages.map((msg) => msg.content),
+            ])
+            setFilesByPath(bootFiles)
+
+            const filePaths = Object.keys(bootFiles)
+            if (filePaths.length > 0 && !activeFile) {
+                const firstFile = filePaths[0]
+                setOpenFiles([{ id: firstFile, name: firstFile.split("/").pop() ?? firstFile, type: firstFile.endsWith(".json") ? "json" : "code" }])
+                setActiveFile(firstFile)
+            }
+            return
+        }
+
+        const assistantContent = await generateAssistantFromConversation(conversation)
+        if (!assistantContent) {
+            return
+        }
+
+        const bootFiles = buildFilesFromResponses([
+            templateUiPromptRef.current,
+            assistantContent,
+        ])
+        setFilesByPath(bootFiles)
+
+        const filePaths = Object.keys(bootFiles)
+        if (filePaths.length > 0 && !activeFile) {
+            const firstFile = filePaths[0]
+            setOpenFiles([{ id: firstFile, name: firstFile.split("/").pop() ?? firstFile, type: firstFile.endsWith(".json") ? "json" : "code" }])
+            setActiveFile(firstFile)
+        }
+
+        const supabase = createClient()
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        if (!authUser) {
+            return
+        }
+
+        const { data: assistantMsg } = await supabase
+            .from("messages")
+            .insert({
+                project_id: chatId,
+                user_id: authUser.id,
+                role: "assistant",
+                content: assistantContent,
+            })
+            .select()
+            .single()
+
+        if (assistantMsg) {
+            setMessages((prev) => [...prev, assistantMsg])
+        }
+    }
 
     // Handle sending follow-up messages
     const handleSendMessage = async (message: string) => {
@@ -256,13 +528,43 @@ export default function SynthetixFooter() {
             .select()
             .single()
 
-        if (error) {
+        if (error || !newMsg) {
             console.error("Error sending message:", error)
             return
         }
 
-        if (newMsg) {
-            setMessages((prev) => [...prev, newMsg])
+        const nextConversation = [...messages, newMsg]
+        setMessages(nextConversation)
+
+        try {
+            const assistantContent = await generateAssistantFromConversation(nextConversation)
+            if (!assistantContent) {
+                return
+            }
+
+            const { data: assistantMsg } = await supabase
+                .from("messages")
+                .insert({
+                    project_id: chatId,
+                    user_id: authUser.id,
+                    role: "assistant",
+                    content: assistantContent,
+                })
+                .select()
+                .single()
+
+            if (assistantMsg) {
+                setMessages((prev) => [...prev, assistantMsg])
+            }
+        } catch (generationError: any) {
+            console.error("Error generating follow-up:", generationError)
+            setIsGenerating(false)
+            setMessages((prev) => [...prev, {
+                id: "error-" + Date.now(),
+                role: "assistant",
+                content: `An error occurred generating a response constraint. Details: ${generationError?.message || String(generationError)}`,
+                created_at: new Date().toISOString()
+            }])
         }
     }
 
@@ -285,6 +587,55 @@ export default function SynthetixFooter() {
             document.removeEventListener("mouseup", handleMouseUp)
         }
     }, [isDragging])
+
+    const renderFileTree = (nodes: FileTreeNode[], depth = 0) => {
+        return nodes.map((node) => {
+            if (node.type === "folder") {
+                const isExpanded = expandedFolders[node.path] ?? depth < 1
+                return (
+                    <div key={node.path}>
+                        <div
+                            className="flex items-center gap-1.5 px-3 py-1 text-sm text-neutral-300 hover:bg-[#262626]/50 cursor-pointer transition-colors"
+                            style={{ paddingLeft: `${12 + depth * 16}px` }}
+                            onClick={() => {
+                                setExpandedFolders((prev) => ({
+                                    ...prev,
+                                    [node.path]: !isExpanded,
+                                }))
+                            }}
+                        >
+                            <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isExpanded ? "-rotate-90" : ""}`} />
+                            <MaterialIcon name={node.name} type="folder" isOpen={isExpanded} className="w-4 h-4 text-neutral-400" />
+                            <span>{node.name}</span>
+                        </div>
+                        {isExpanded && node.children && (
+                            <div className="relative flex flex-col">
+                                <div
+                                    className="absolute top-0 bottom-0 w-px bg-neutral-700/70"
+                                    style={{ left: `${32 + depth * 16}px` }}
+                                />
+                                <div className="relative flex flex-col">{renderFileTree(node.children, depth + 1)}</div>
+                            </div>
+                        )}
+                    </div>
+                )
+            }
+
+            const fileName = node.path.split("/").pop() ?? node.path
+            const isJson = fileName.endsWith(".json")
+            return (
+                <div
+                    key={node.path}
+                    onClick={() => handleOpenFile(node.path, isJson ? "json" : "code")}
+                    style={{ paddingLeft: `${24 + depth * 16}px` }}
+                    className={`flex items-center gap-2 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === node.path ? "text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400" : "text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent"}`}
+                >
+                    <MaterialIcon name={fileName} type="file" className={`w-4 h-4 ${activeFile === node.path ? "text-neutral-300" : "text-neutral-400"}`} />
+                    {fileName}
+                </div>
+            )
+        })
+    }
 
     return (
         <div className={`flex h-screen w-full bg-[#121212] text-neutral-100 font-sans antialiased tracking-tight selection:bg-neutral-500/30 overflow-hidden ${isDragging ? 'select-none cursor-col-resize' : ''}`}>
@@ -426,7 +777,17 @@ export default function SynthetixFooter() {
                                         No messages yet. Start a conversation below.
                                     </div>
                                 ) : (
-                                    messages.map((msg) => (
+                                    messages.map((msg) => {
+                                        let displayContent = msg.content;
+                                        if (msg.role === "assistant") {
+                                            displayContent = msg.content.replace(/<boltArtifact[^>]*>[\s\S]*?<\/boltArtifact>/g, (match) => {
+                                                const actionMatch = match.match(/<boltAction[^>]*>/g);
+                                                const count = actionMatch ? actionMatch.length : 0;
+                                                return `\n\n*Generated ${count} steps/files...*\n\n`;
+                                            }).trim();
+                                        }
+
+                                        return (
                                         <div
                                             key={msg.id}
                                             className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -437,15 +798,21 @@ export default function SynthetixFooter() {
                                                 </div>
                                             )}
                                             <div
-                                                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${msg.role === "user"
-                                                    ? "bg-[#333333] text-neutral-100 border border-[#404040] rounded-br-md"
+                                                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-7 ${msg.role === "user"
+                                                    ? "bg-[#333333] text-neutral-100 border border-[#404040] rounded-br-md whitespace-pre-wrap"
                                                     : "bg-[#262626] text-neutral-200 rounded-bl-md"
                                                     }`}
                                             >
-                                                {msg.content}
+                                                {msg.role === "assistant" ? (
+                                                    <div className="space-y-3">
+                                                        {renderAssistantMessage(displayContent)}
+                                                    </div>
+                                                ) : (
+                                                    displayContent
+                                                )}
                                             </div>
                                         </div>
-                                    ))
+                                    )})
                                 )}
                                 <div ref={messagesEndRef} />
                             </div>
@@ -542,8 +909,7 @@ export default function SynthetixFooter() {
                         <div className="flex flex-1 overflow-hidden relative">
 
                             {/* --- PREVIEW VIEW --- */}
-                            {activeView === 'preview' && (
-                                <div className="flex-1 flex flex-col bg-[#121212] relative z-0 w-full h-full animate-in fade-in duration-200">
+                            <div className={`flex-1 flex flex-col bg-[#121212] relative z-0 w-full h-full animate-in fade-in duration-200 ${activeView === 'preview' ? '' : 'hidden'}`}>
                                     {/* Browser Toolbar */}
                                     <div className="h-12 flex items-center px-4 border-b border-[#262626] bg-[#171717] gap-4 shrink-0">
                                         <div className="flex items-center gap-1.5">
@@ -556,9 +922,17 @@ export default function SynthetixFooter() {
                                         <div className="flex-1 bg-[#121212] border border-[#262626] rounded-md h-8 flex items-center justify-between px-3 shadow-inner">
                                             <div className="flex items-center">
                                                 <Lock className="w-3 h-3 text-neutral-500 mr-2" />
-                                                <span className="text-neutral-400 text-xs font-medium">localhost:3000</span>
+                                                <span className="text-neutral-400 text-xs font-medium">{previewUrl || "localhost:3000"}</span>
                                             </div>
-                                            <button className="text-neutral-500 hover:text-neutral-300 transition-colors" title="Open in new tab">
+                                            <button
+                                                className="text-neutral-500 hover:text-neutral-300 transition-colors"
+                                                title="Open in new tab"
+                                                onClick={() => {
+                                                    if (previewUrl) {
+                                                        window.open(previewUrl, "_blank", "noopener,noreferrer")
+                                                    }
+                                                }}
+                                            >
                                                 <ExternalLink className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
@@ -590,19 +964,26 @@ export default function SynthetixFooter() {
                                                 : 'w-full h-full'
                                                 }`}
                                         >
-                                            <div className="text-center">
-                                                <div className="flex justify-center items-center">
-                                                    <TaskWidget data={MOCK_DATA} />
+                                            {previewUrl ? (
+                                                <iframe title="Live preview" src={previewUrl} className="w-full h-full border-0" />
+                                            ) : (
+                                                <div className="text-center text-neutral-400 px-4">
+                                                    {(isBooting || isGenerating) ? (
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                                            <p>Generating and booting preview...</p>
+                                                        </div>
+                                                    ) : (
+                                                        <p>Send a prompt to generate files and start preview.</p>
+                                                    )}
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
                                     </div>
-                                </div>
-                            )}
+                            </div>
 
                             {/* --- CODE VIEW --- */}
-                            {activeView === 'code' && (
-                                <div className="flex flex-1 w-full h-full animate-in fade-in duration-200">
+                            <div className={`flex flex-1 w-full h-full animate-in fade-in duration-200 ${activeView === 'code' ? '' : 'hidden'}`}>
                                     {/* File Explorer Sidebar */}
                                     <div className="w-64 flex flex-col bg-[#171717] border-r border-[#262626] shrink-0">
                                         <div className="h-10 flex items-center justify-between px-3 shrink-0">
@@ -614,64 +995,9 @@ export default function SynthetixFooter() {
                                         </div>
                                         <div className="flex-1 overflow-y-auto py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
                                             <div className="flex flex-col">
-                                                {/* App Folder */}
-                                                <div
-                                                    className="flex items-center gap-1.5 px-3 py-1 text-sm text-neutral-300 hover:bg-[#262626]/50 cursor-pointer transition-colors"
-                                                    onClick={() => setIsAppOpen(!isAppOpen)}
-                                                >
-                                                    <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isAppOpen && '-rotate-90'}`} />
-                                                    {isAppOpen ? <FolderOpen className="w-4 h-4 text-neutral-400" /> : <Folder className="w-4 h-4 text-neutral-400" />}
-                                                    <span>app</span>
-                                                </div>
-                                                {isAppOpen && (
-                                                    <div className="flex flex-col">
-                                                        {['globals.css', 'layout.tsx', 'page.tsx'].map(fileName => (
-                                                            <div
-                                                                key={fileName}
-                                                                onClick={() => handleOpenFile(fileName, 'code')}
-                                                                className={`flex items-center gap-2 pl-9 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
-                                                            >
-                                                                <FileCode2 className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                {fileTree.length > 0 ? renderFileTree(fileTree) : (
+                                                    <div className="px-3 py-2 text-xs text-neutral-500">No generated files yet.</div>
                                                 )}
-
-                                                {/* Components Folder */}
-                                                <div
-                                                    className="flex items-center gap-1.5 px-3 py-1 text-sm text-neutral-300 hover:bg-[#262626]/50 cursor-pointer transition-colors"
-                                                    onClick={() => setIsComponentsOpen(!isComponentsOpen)}
-                                                >
-                                                    <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isComponentsOpen && '-rotate-90'}`} />
-                                                    {isComponentsOpen ? <FolderOpen className="w-4 h-4 text-neutral-400" /> : <Folder className="w-4 h-4 text-neutral-400" />}
-                                                    <span>components</span>
-                                                </div>
-                                                {isComponentsOpen && (
-                                                    <div className="flex flex-col">
-                                                        {['synthetix-footer.tsx', 'synthetix-hero.tsx', 'synthetix-nav.tsx'].map(fileName => (
-                                                            <div
-                                                                key={fileName}
-                                                                onClick={() => handleOpenFile(fileName, 'code')}
-                                                                className={`flex items-center gap-2 pl-9 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
-                                                            >
-                                                                <FileCode2 className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Root Files */}
-                                                <div className="mt-1">
-                                                    {['package.json', 'tsconfig.json'].map(fileName => (
-                                                        <div
-                                                            key={fileName}
-                                                            onClick={() => handleOpenFile(fileName, 'json')}
-                                                            className={`flex items-center gap-2 pl-6 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === fileName ? 'text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400' : 'text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent'}`}
-                                                        >
-                                                            <FileJson className={`w-4 h-4 ${activeFile === fileName ? 'text-neutral-300' : 'text-neutral-400'}`} /> {fileName}
-                                                        </div>
-                                                    ))}
-                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -698,9 +1024,9 @@ export default function SynthetixFooter() {
                                                         <div className="absolute top-0 left-0 right-0 h-[2px] bg-neutral-400" />
                                                     )}
                                                     {file.type === 'json' ? (
-                                                        <FileJson className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
+                                                        <MaterialIcon name={file.name} type="file" className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
                                                     ) : (
-                                                        <FileCode2 className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
+                                                        <MaterialIcon name={file.name} type="file" className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
                                                     )}
                                                     {file.name}
                                                     <button
@@ -722,10 +1048,21 @@ export default function SynthetixFooter() {
                                             {openFiles.length > 0 ? (
                                                 <Editor
                                                     height="100%"
-                                                    language={activeFile.endsWith('.json') ? "json" : activeFile.endsWith('.css') ? "css" : "typescript"}
-                                                    theme="midnight-theme"
-                                                    value={defaultCode}
+                                                    language={activeEditorLanguage}
+                                                    theme="vitesse-dark"
+                                                    value={activeFileContent || defaultCode}
+                                                    onChange={(value) => {
+                                                        if (value !== undefined) {
+                                                            setFilesByPath(prev => ({
+                                                                ...prev,
+                                                                [activeFile]: value
+                                                            }))
+                                                        }
+                                                    }}
                                                     beforeMount={handleEditorWillMount}
+                                                    onMount={(_, monaco) => {
+                                                        void initializeShikiMonaco(monaco)
+                                                    }}
                                                     options={{
                                                         minimap: { enabled: false },
                                                         fontSize: 13,
@@ -784,35 +1121,21 @@ export default function SynthetixFooter() {
                                                 </div>
 
                                                 <div className="p-4 font-mono text-sm text-neutral-300 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-neutral-200 font-medium">user@panxo</span>
-                                                        <span className="text-neutral-500 font-bold">:</span>
-                                                        <span className="text-neutral-400 font-medium">~/project</span>
-                                                        <span className="text-neutral-500 font-bold">$</span>
-                                                        <span className="text-white">npm run dev</span>
-                                                    </div>
-                                                    <div className="text-neutral-500 mb-1">&gt; project@0.1.0 dev</div>
-                                                    <div className="text-neutral-500 mb-4">&gt; next dev</div>
-                                                    <div className="text-neutral-300 mb-6">ready - started server on 0.0.0.0:3000, url: http://localhost:3000</div>
-
-                                                    <div className="flex items-center gap-2 mt-2">
-                                                        <span className="text-neutral-200 font-medium">user@panxo</span>
-                                                        <span className="text-neutral-500 font-bold">:</span>
-                                                        <span className="text-neutral-400 font-medium">~/project</span>
-                                                        <span className="text-neutral-500 font-bold">$</span>
-                                                        <input
-                                                            type="text"
-                                                            className="bg-transparent border-none outline-none text-white flex-1 focus:ring-0"
-                                                            autoFocus
+                                                    {terminalLogs.length > 0 ? terminalLogs.map((line, index) => (
+                                                        <div 
+                                                            key={`${index}-${line.slice(0, 20)}`} 
+                                                            className="whitespace-pre-wrap break-words"
+                                                            dangerouslySetInnerHTML={{ __html: ansiUp.ansi_to_html(line) }}
                                                         />
-                                                    </div>
+                                                    )) : (
+                                                        <div className="text-neutral-500">Terminal is idle.</div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
 
                                     </div>
-                                </div>
-                            )}
+                            </div>
 
                         </div>
                     </main>

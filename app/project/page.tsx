@@ -4,9 +4,11 @@ import React, { useState, useEffect } from "react"
 import {
     ChevronDown, Lock, Play, Cloud, Settings, Download, Share,
     ChevronLeft, ChevronRight, RotateCw, Smartphone, Monitor, Maximize2,
-    CodeXml, X, Box, Globe, FileCode2, Folder, FolderOpen, FileJson,
+    CodeXml, X, Box, Globe,
     Plus, MoreHorizontal, TerminalSquare
 } from "lucide-react"
+
+import { MaterialIcon } from "@/lib/material-icons"
 
 import { PromptInputBox } from "@/components/ai-prompt-box"
 import { Button } from "@/components/ui/button"
@@ -309,19 +311,19 @@ export default function SynthetixFooter() {
                                                 onClick={() => setIsAppOpen(!isAppOpen)}
                                             >
                                                 <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isAppOpen && '-rotate-90'}`} />
-                                                {isAppOpen ? <FolderOpen className="w-4 h-4 text-neutral-400" /> : <Folder className="w-4 h-4 text-neutral-400" />}
+                                                {isAppOpen ? <MaterialIcon name="app" type="folder" isOpen={true} className="w-4 h-4 text-neutral-400" /> : <MaterialIcon name="app" type="folder" isOpen={false} className="w-4 h-4 text-neutral-400" />}
                                                 <span>app</span>
                                             </div>
                                             {isAppOpen && (
                                                 <div className="flex flex-col">
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> globals.css
+                                                        <MaterialIcon name="globals.css" type="file" className="w-4 h-4 text-neutral-400" /> globals.css
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> layout.tsx
+                                                        <MaterialIcon name="layout.tsx" type="file" className="w-4 h-4 text-neutral-400" /> layout.tsx
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> page.tsx
+                                                        <MaterialIcon name="page.tsx" type="file" className="w-4 h-4 text-neutral-400" /> page.tsx
                                                     </div>
                                                 </div>
                                             )}
@@ -332,29 +334,29 @@ export default function SynthetixFooter() {
                                                 onClick={() => setIsComponentsOpen(!isComponentsOpen)}
                                             >
                                                 <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isComponentsOpen && '-rotate-90'}`} />
-                                                {isComponentsOpen ? <FolderOpen className="w-4 h-4 text-neutral-400" /> : <Folder className="w-4 h-4 text-neutral-400" />}
+                                                {isComponentsOpen ? <MaterialIcon name="components" type="folder" isOpen={true} className="w-4 h-4 text-neutral-400" /> : <MaterialIcon name="components" type="folder" isOpen={false} className="w-4 h-4 text-neutral-400" />}
                                                 <span>components</span>
                                             </div>
                                             {isComponentsOpen && (
                                                 <div className="flex flex-col">
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-300" /> synthetix-footer.tsx
+                                                        <MaterialIcon name="synthetix-footer.tsx" type="file" className="w-4 h-4 text-neutral-300" /> synthetix-footer.tsx
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> synthetix-hero.tsx
+                                                        <MaterialIcon name="synthetix-hero.tsx" type="file" className="w-4 h-4 text-neutral-400" /> synthetix-hero.tsx
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                        <FileCode2 className="w-4 h-4 text-neutral-400" /> synthetix-nav.tsx
+                                                        <MaterialIcon name="synthetix-nav.tsx" type="file" className="w-4 h-4 text-neutral-400" /> synthetix-nav.tsx
                                                     </div>
                                                 </div>
                                             )}
 
                                             {/* Root Files */}
                                             <div className="flex items-center gap-2 pl-6 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer mt-1">
-                                                <FileJson className="w-4 h-4 text-neutral-400" /> package.json
+                                                <MaterialIcon name="package.json" type="file" className="w-4 h-4 text-neutral-400" /> package.json
                                             </div>
                                             <div className="flex items-center gap-2 pl-6 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
-                                                <FileJson className="w-4 h-4 text-neutral-400" /> tsconfig.json
+                                                <MaterialIcon name="tsconfig.json" type="file" className="w-4 h-4 text-neutral-400" /> tsconfig.json
                                             </div>
                                         </div>
                                     </div>
@@ -370,7 +372,7 @@ export default function SynthetixFooter() {
                                         <div className="flex items-center gap-2 px-4 h-full bg-[#171717] text-neutral-200 text-sm font-medium cursor-pointer border-r border-[#262626] relative">
                                             {/* Subtle top accent line */}
                                             <div className="absolute top-0 left-0 right-0 h-[2px] bg-neutral-400" />
-                                            <FileCode2 className="w-4 h-4 text-neutral-300" />
+                                            <MaterialIcon name="synthetix-footer.tsx" type="file" className="w-4 h-4 text-neutral-300" />
                                             synthetix-footer.tsx
                                             <button className="ml-2 p-0.5 text-neutral-500 hover:text-neutral-300 hover:bg-[#333333] rounded transition-colors">
                                                 <X className="w-3.5 h-3.5" />
@@ -381,7 +383,7 @@ export default function SynthetixFooter() {
 
                                         {/* Inactive Tab */}
                                         <div className="flex items-center gap-2 px-4 h-full text-neutral-500 hover:text-neutral-300 hover:bg-[#171717]/50 text-sm font-medium cursor-pointer transition-colors border-r border-[#262626]">
-                                            <FileCode2 className="w-4 h-4 text-neutral-500" />
+                                            <MaterialIcon name="globals.css" type="file" className="w-4 h-4 text-neutral-500" />
                                             globals.css
                                         </div>
 
