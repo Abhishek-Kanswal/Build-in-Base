@@ -1,0 +1,10 @@
+export default function SettingsPage() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#0A0A0A] text-white">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-2">Settings</h1>
+        <p className="text-gray-400">Settings page coming soon.</p>
+      </div>
+    </div>
+  )
+}
