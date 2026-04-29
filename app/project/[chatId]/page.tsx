@@ -8,13 +8,22 @@ import {
     ChevronLeft, ChevronRight, RotateCw, Smartphone, Monitor, Maximize2,
     CodeXml, X, Box, Globe,
     Plus, MoreHorizontal, TerminalSquare, ExternalLink, Github, Loader2,
-    User, Bot, PanelLeft, Copy, Search, GitBranch, Bug, Blocks, Sparkles
+    User, Bot, PanelLeft, Copy, Search, GitBranch, Bug, Blocks, Sparkles,
+    FilePlus, FolderPlus
 } from "lucide-react"
 
 import { MaterialIcon } from "@/lib/material-icons"
 
 import { PromptInputBox } from "@/components/ai-prompt-box"
 import { Button } from "@/components/ui/button"
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuShortcut,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -44,6 +53,11 @@ interface Message {
     role: "user" | "assistant"
     content: string
     created_at: string
+}
+
+interface AssistantMessageSections {
+    think: string
+    answer: string
 }
 
 export default function ProjectPage() {
@@ -76,7 +90,9 @@ export default function ProjectPage() {
     const [previewUrl, setPreviewUrl] = useState("")
     const [isGenerating, setIsGenerating] = useState(false)
     const [terminalLogs, setTerminalLogs] = useState<string[]>([])
+    const [terminalLoading, setTerminalLoading] = useState(false)
     const [filesByPath, setFilesByPath] = useState<FileMap>({})
+    const [virtualFolders, setVirtualFolders] = useState<string[]>([])
     const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
         app: true,
         components: true,
@@ -92,10 +108,14 @@ export default function ProjectPage() {
     const [openFiles, setOpenFiles] = useState<{ id: string; name: string; type: "code" | "json" }[]>([])
     const [activeFile, setActiveFile] = useState("")
 
-    const fileTree = useMemo(() => fileMapToTree(filesByPath), [filesByPath])
+    const fileTree = useMemo(() => fileMapToTree(filesByPath, virtualFolders), [filesByPath, virtualFolders])
     const activeFileContent = activeFile ? filesByPath[activeFile] ?? "" : ""
     const ansiUp = useMemo(() => new AnsiUp(), [])
     const shikiMonacoInitRef = useRef<Promise<void> | null>(null)
+    const editorRef = useRef<any>(null)
+    const monacoSetupDoneRef = useRef(false)
+    const savedFileContentsRef = useRef<Record<string, string>>({})
+    const [editorFontSize, setEditorFontSize] = useState(13)
     const activeEditorLanguage = useMemo(() => {
         if (!activeFile) return "typescript"
 
@@ -110,23 +130,174 @@ export default function ProjectPage() {
         return "typescript"
     }, [activeFile])
 
-    const renderAssistantMessage = (content: string) => {
-        const paragraphs = content.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 0)
+    const parseAssistantSections = (content: string): AssistantMessageSections => {
+        const closedThinkMatch = content.match(/<think>([\s\S]*?)<\/think>/i)
+        if (closedThinkMatch) {
+            return {
+                think: closedThinkMatch[1]?.trim() ?? "",
+                answer: content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim(),
+            }
+        }
 
-        return paragraphs.map((paragraph, paragraphIndex) => {
-            const lines = paragraph.split("\n")
+        const openThinkIndex = content.toLowerCase().indexOf("<think>")
+        if (openThinkIndex >= 0) {
+            const prefix = content.slice(0, openThinkIndex).trim()
+            const thinkPartial = content.slice(openThinkIndex + "<think>".length).trim()
+            return {
+                think: thinkPartial,
+                answer: prefix,
+            }
+        }
 
-            return (
-                <p key={`paragraph-${paragraphIndex}`} className={paragraphIndex > 0 ? "mt-3" : ""}>
-                    {lines.map((line, lineIndex) => (
-                        <React.Fragment key={`line-${paragraphIndex}-${lineIndex}`}>
-                            {line}
-                            {lineIndex < lines.length - 1 && <br />}
-                        </React.Fragment>
-                    ))}
-                </p>
-            )
-        })
+        return { think: "", answer: content.trim() }
+    }
+
+    const escapeHtml = (value: string) => value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+
+    const applyInlineMarkdown = (value: string) => {
+        let html = escapeHtml(value)
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        return html
+    }
+
+    const markdownToHtml = (content: string) => {
+        const lines = content.split("\n")
+        const out: string[] = []
+        let inUl = false
+        let inOl = false
+        let inCodeBlock = false
+        const codeBuffer: string[] = []
+
+        const closeLists = () => {
+            if (inUl) {
+                out.push("</ul>")
+                inUl = false
+            }
+            if (inOl) {
+                out.push("</ol>")
+                inOl = false
+            }
+        }
+
+        for (const rawLine of lines) {
+            const line = rawLine.trimEnd()
+
+            if (line.startsWith("```")) {
+                if (inCodeBlock) {
+                    out.push(`<pre><code>${escapeHtml(codeBuffer.join("\n"))}</code></pre>`)
+                    codeBuffer.length = 0
+                    inCodeBlock = false
+                } else {
+                    closeLists()
+                    inCodeBlock = true
+                }
+                continue
+            }
+
+            if (inCodeBlock) {
+                codeBuffer.push(rawLine)
+                continue
+            }
+
+            if (line.length === 0) {
+                closeLists()
+                continue
+            }
+
+            const h3 = line.match(/^###\s+(.+)/)
+            const h2 = line.match(/^##\s+(.+)/)
+            const h1 = line.match(/^#\s+(.+)/)
+            const ul = line.match(/^[-*]\s+(.+)/)
+            const ol = line.match(/^\d+\.\s+(.+)/)
+            const quote = line.match(/^>\s+(.+)/)
+
+            if (h1) {
+                closeLists()
+                out.push(`<h1>${applyInlineMarkdown(h1[1])}</h1>`)
+                continue
+            }
+            if (h2) {
+                closeLists()
+                out.push(`<h2>${applyInlineMarkdown(h2[1])}</h2>`)
+                continue
+            }
+            if (h3) {
+                closeLists()
+                out.push(`<h3>${applyInlineMarkdown(h3[1])}</h3>`)
+                continue
+            }
+            if (quote) {
+                closeLists()
+                out.push(`<blockquote>${applyInlineMarkdown(quote[1])}</blockquote>`)
+                continue
+            }
+            if (ul) {
+                if (inOl) {
+                    out.push("</ol>")
+                    inOl = false
+                }
+                if (!inUl) {
+                    out.push("<ul>")
+                    inUl = true
+                }
+                out.push(`<li>${applyInlineMarkdown(ul[1])}</li>`)
+                continue
+            }
+            if (ol) {
+                if (inUl) {
+                    out.push("</ul>")
+                    inUl = false
+                }
+                if (!inOl) {
+                    out.push("<ol>")
+                    inOl = true
+                }
+                out.push(`<li>${applyInlineMarkdown(ol[1])}</li>`)
+                continue
+            }
+
+            closeLists()
+            out.push(`<p>${applyInlineMarkdown(line)}</p>`)
+        }
+
+        if (inCodeBlock) {
+            out.push(`<pre><code>${escapeHtml(codeBuffer.join("\n"))}</code></pre>`)
+        }
+
+        closeLists()
+        return out.join("\n")
+    }
+
+    const renderMarkdown = (content: string, isThinking = false) => (
+        <div
+            className={`space-y-2 [&_h1]:mt-2 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-2 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_p]:leading-7 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-neutral-600 [&_blockquote]:pl-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-[#333] [&_pre]:bg-[#111] [&_pre]:p-3 [&_pre]:text-[13px] [&_code]:rounded [&_code]:bg-[#1b1b1b] [&_code]:px-1.5 [&_code]:py-0.5 [&_strong]:font-semibold ${isThinking ? "text-neutral-400" : "text-neutral-200"}`}
+            dangerouslySetInnerHTML={{ __html: markdownToHtml(content) }}
+        />
+    )
+
+    const streamAssistantMessage = async (tempId: string, fullContent: string) => {
+        let index = 0
+
+        while (index < fullContent.length) {
+            const chunkSize = Math.max(2, Math.min(14, Math.floor(Math.random() * 12) + 3))
+            index = Math.min(fullContent.length, index + chunkSize)
+            const nextContent = fullContent.slice(0, index)
+
+            setMessages((prev) => prev.map((message) => (
+                message.id === tempId
+                    ? { ...message, content: nextContent }
+                    : message
+            )))
+
+            await new Promise((resolve) => setTimeout(resolve, 16))
+        }
     }
 
     const appendTerminalOutput = (chunk: string) => {
@@ -161,21 +332,338 @@ export default function ProjectPage() {
 
     const defaultCode = "// Generated files will appear here"
 
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (activeView !== "code") return
+            if (!(event.ctrlKey || event.metaKey)) return
+
+            const key = event.key.toLowerCase()
+            const isZoomIn = key === "+" || key === "="
+            const isZoomOut = key === "-" || key === "_"
+            const isReset = key === "0"
+
+            if (!isZoomIn && !isZoomOut && !isReset) return
+
+            event.preventDefault()
+            setEditorFontSize((currentSize) => {
+                if (isReset) return 13
+                const nextSize = isZoomIn ? currentSize + 1 : currentSize - 1
+                return Math.min(24, Math.max(10, nextSize))
+            })
+        }
+
+        window.addEventListener("keydown", handleKeyDown)
+        return () => window.removeEventListener("keydown", handleKeyDown)
+    }, [activeView])
+
+    const getTargetFolderPath = () => {
+        if (!activeFile) return ""
+        return activeFile.includes("/") ? activeFile.split("/").slice(0, -1).join("/") : ""
+    }
+
+    const buildDefaultFileContent = (fileName: string) => {
+        if (fileName.endsWith(".tsx") || fileName.endsWith(".jsx")) {
+            const componentName = fileName.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_$]/g, "_")
+            return `export default function ${componentName}() {
+  return <div />
+}
+`
+        }
+
+        if (fileName.endsWith(".ts") || fileName.endsWith(".js")) {
+            const functionName = fileName.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_$]/g, "_")
+            return `export default function ${functionName}() {
+  return null
+}
+`
+        }
+
+        if (fileName.endsWith(".json")) {
+            return "{}\n"
+        }
+
+        return ""
+    }
+
+    const markFileAsSaved = (filePath: string, content: string) => {
+        savedFileContentsRef.current[filePath] = content
+    }
+
+    const isFileDirty = (filePath: string) => {
+        if (!(filePath in filesByPath)) return false
+        return filesByPath[filePath] !== savedFileContentsRef.current[filePath]
+    }
+
+    const createFolder = (basePath?: string) => {
+        const folderInput = window.prompt("Folder name", basePath ?? getTargetFolderPath())
+        if (!folderInput) return
+
+        const nextFolderPath = folderInput.trim().replace(/^\/+|\/+$/g, "")
+        if (!nextFolderPath) return
+
+        setVirtualFolders((prev) => {
+            const next = new Set(prev)
+            const segments = nextFolderPath.split("/").filter(Boolean)
+            let currentPath = ""
+
+            for (const segment of segments) {
+                currentPath = currentPath ? `${currentPath}/${segment}` : segment
+                next.add(currentPath)
+            }
+
+            return Array.from(next)
+        })
+
+        setExpandedFolders((prev) => {
+            const next = { ...prev }
+            const segments = nextFolderPath.split("/").filter(Boolean)
+            let currentPath = ""
+
+            for (const segment of segments) {
+                currentPath = currentPath ? `${currentPath}/${segment}` : segment
+                next[currentPath] = true
+            }
+
+            return next
+        })
+    }
+
+    const createFile = (basePath?: string) => {
+        const parentFolder = basePath ?? getTargetFolderPath()
+        const defaultName = parentFolder ? `${parentFolder}/new-file.tsx` : "new-file.tsx"
+        const fileInput = window.prompt("File name", defaultName)
+        if (!fileInput) return
+
+        const nextFilePath = fileInput.trim().replace(/^\/+|\/+$/g, "")
+        if (!nextFilePath) return
+
+        setFilesByPath((prev) => {
+            if (prev[nextFilePath] !== undefined) {
+                return prev
+            }
+
+            const nextFiles = {
+                ...prev,
+                [nextFilePath]: buildDefaultFileContent(nextFilePath.split("/").pop() ?? nextFilePath),
+            }
+
+            markFileAsSaved(nextFilePath, nextFiles[nextFilePath])
+            return nextFiles
+        })
+
+        const parentPath = nextFilePath.includes("/") ? nextFilePath.split("/").slice(0, -1).join("/") : ""
+        if (parentPath) {
+            setVirtualFolders((prev) => {
+                const next = new Set(prev)
+                const segments = parentPath.split("/").filter(Boolean)
+                let currentPath = ""
+
+                for (const segment of segments) {
+                    currentPath = currentPath ? `${currentPath}/${segment}` : segment
+                    next.add(currentPath)
+                }
+
+                return Array.from(next)
+            })
+
+            setExpandedFolders((prev) => ({
+                ...prev,
+                [parentPath]: true,
+            }))
+        }
+
+        const fileName = nextFilePath.split("/").pop() ?? nextFilePath
+        setOpenFiles((prev) => prev.some((file) => file.id === nextFilePath) ? prev : [...prev, {
+            id: nextFilePath,
+            name: fileName,
+            type: nextFilePath.endsWith(".json") ? "json" : "code",
+        }])
+        setActiveFile(nextFilePath)
+    }
+
+    const deleteFileByPath = (filePath: string) => {
+        if (!window.confirm(`Delete file \"${filePath}\"?`)) return
+
+        setFilesByPath((prev) => {
+            if (!(filePath in prev)) return prev
+
+            const next = { ...prev }
+            delete next[filePath]
+            return next
+        })
+
+        delete savedFileContentsRef.current[filePath]
+
+        setOpenFiles((prev) => {
+            const next = prev.filter((file) => file.id !== filePath)
+            if (activeFile === filePath) {
+                setActiveFile(next.length > 0 ? next[next.length - 1].id : "")
+            }
+            return next
+        })
+    }
+
+    const deleteFolderByPath = (folderPath: string) => {
+        if (!window.confirm(`Delete folder \"${folderPath}\" and all files inside it?`)) return
+
+        const startsInsideFolder = (path: string) => path === folderPath || path.startsWith(`${folderPath}/`)
+
+        setFilesByPath((prev) => {
+            const next: FileMap = {}
+            for (const [path, content] of Object.entries(prev)) {
+                if (!startsInsideFolder(path)) {
+                    next[path] = content
+                } else {
+                    delete savedFileContentsRef.current[path]
+                }
+            }
+            return next
+        })
+
+        setVirtualFolders((prev) => prev.filter((path) => !startsInsideFolder(path)))
+
+        setExpandedFolders((prev) => {
+            const next: Record<string, boolean> = {}
+            for (const [path, isOpen] of Object.entries(prev)) {
+                if (!startsInsideFolder(path)) {
+                    next[path] = isOpen
+                }
+            }
+            return next
+        })
+
+        setOpenFiles((prev) => {
+            const next = prev.filter((file) => !startsInsideFolder(file.id))
+            if (activeFile && startsInsideFolder(activeFile)) {
+                setActiveFile(next.length > 0 ? next[next.length - 1].id : "")
+            }
+            return next
+        })
+    }
+
+    const openIntegratedTerminal = (path?: string) => {
+        setIsTerminalOpen(true)
+        setActiveView("code")
+
+        const label = path ? `$ cd ${path}` : "$"
+        setTerminalLogs((prev) => [...prev, label])
+    }
+
+    const zoomEditor = (delta: number) => {
+        setEditorFontSize((currentSize) => Math.min(24, Math.max(10, currentSize + delta)))
+    }
+
+    const getPrettierParser = (filePath: string, language: string) => {
+        const lowerPath = filePath.toLowerCase()
+        if (lowerPath.endsWith(".tsx") || lowerPath.endsWith(".ts")) return "typescript"
+        if (lowerPath.endsWith(".jsx") || lowerPath.endsWith(".js") || lowerPath.endsWith(".mjs") || lowerPath.endsWith(".cjs")) return "babel"
+        if (lowerPath.endsWith(".json") || lowerPath.endsWith(".jsonc")) return "json"
+        if (lowerPath.endsWith(".css") || lowerPath.endsWith(".scss") || lowerPath.endsWith(".sass") || lowerPath.endsWith(".less")) return "css"
+        if (lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")) return "html"
+
+        if (language === "typescript" || language === "tsx") return "typescript"
+        if (language === "javascript" || language === "jsx") return "babel"
+        return "babel"
+    }
+
+    const formatActiveFile = async () => {
+        if (!editorRef.current) return
+
+        const source = editorRef.current.getValue()
+        const parser = getPrettierParser(activeFile, activeEditorLanguage)
+
+        try {
+            const prettierModule = await import("prettier/standalone")
+            const [babelPlugin, tsPlugin, estreePlugin, postcssPlugin, htmlPlugin] = await Promise.all([
+                import("prettier/plugins/babel"),
+                import("prettier/plugins/typescript"),
+                import("prettier/plugins/estree"),
+                import("prettier/plugins/postcss"),
+                import("prettier/plugins/html"),
+            ])
+
+            const formatted = await prettierModule.format(source, {
+                parser,
+                plugins: [
+                    (babelPlugin as any).default ?? babelPlugin,
+                    (tsPlugin as any).default ?? tsPlugin,
+                    (estreePlugin as any).default ?? estreePlugin,
+                    (postcssPlugin as any).default ?? postcssPlugin,
+                    (htmlPlugin as any).default ?? htmlPlugin,
+                ],
+                semi: true,
+                singleQuote: true,
+                trailingComma: "all",
+                printWidth: 100,
+            })
+
+            editorRef.current.setValue(formatted)
+            markFileAsSaved(activeFile, formatted)
+            if (activeFile) {
+                setFilesByPath((prev) => ({ ...prev, [activeFile]: formatted }))
+            }
+        } catch (error) {
+            console.error("Failed to format with Prettier", error)
+        }
+    }
+
     // Setup Monaco TypeScript compiler options and Shiki syntax highlighting.
     const handleEditorWillMount = (monaco: any) => {
-        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+        const compilerOptions = {
             jsx: monaco.languages.typescript.JsxEmit.React,
             jsxFactory: 'React.createElement',
             reactNamespace: 'React',
             allowNonTsExtensions: true,
             allowJs: true,
             target: monaco.languages.typescript.ScriptTarget.Latest,
+            moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+            module: monaco.languages.typescript.ModuleKind.ESNext,
+            esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            resolveJsonModule: true,
+        }
+
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+            ...compilerOptions,
         });
 
+        monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+            ...compilerOptions,
+        })
+
         monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-            noSemanticValidation: true,
+            noSemanticValidation: false,
             noSyntaxValidation: false,
         });
+
+        monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+            noSemanticValidation: false,
+            noSyntaxValidation: false,
+        })
+
+        monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true)
+        monaco.languages.typescript.javascriptDefaults.setEagerModelSync(true)
+
+        if (!monacoSetupDoneRef.current) {
+            monacoSetupDoneRef.current = true
+            const reactAndNextLib = `
+declare module "react" {
+  export = React;
+}
+
+declare module "next/link" {
+  const Link: any;
+  export default Link;
+}
+
+declare module "next/image" {
+  const Image: any;
+  export default Image;
+}
+`
+            monaco.languages.typescript.typescriptDefaults.addExtraLib(reactAndNextLib, "file:///node_modules/@types/react/index.d.ts")
+            monaco.languages.typescript.javascriptDefaults.addExtraLib(reactAndNextLib, "file:///node_modules/@types/react/index.d.ts")
+        }
     }
 
     const initializeShikiMonaco = async (monaco: any) => {
@@ -323,16 +811,18 @@ export default function ProjectPage() {
                 }
 
                 // Mount new files to WebContainer. Hot reloading handles changes via Vite/Next.
-                await webcontainer.mount(buildWebContainerTree(filesByPath))
+                await webcontainer.mount(buildWebContainerTree(filesByPath, virtualFolders))
                 prevFilesRef.current = filesByPath;
 
                 isServerRunningRef.current = true
 
                 webcontainer.on("server-ready", (_port, url) => {
                     setPreviewUrl((prev) => prev !== url ? url : prev)
+                    setTerminalLoading(false)
                 })
 
                 setTerminalLogs(["$ npm install --no-progress --loglevel=error"])
+                setTerminalLoading(true)
 
                 const installProcess = await webcontainer.spawn("npm", ["install", "--no-progress", "--loglevel=error"], {
                     env: {
@@ -349,7 +839,8 @@ export default function ProjectPage() {
                 )
                 await installProcess.exit
 
-                setTerminalLogs((prev) => [...prev, "$ npm run dev"])
+                // Add a blank line before the next command for readability
+                setTerminalLogs((prev) => [...prev, "", "$ npm run dev"])
                 const devProcess = await webcontainer.spawn("npm", ["run", "dev"])
                 webcontainerProcessRef.current = devProcess
                 devProcess.output.pipeTo(
@@ -366,7 +857,21 @@ export default function ProjectPage() {
         }
 
         run()
-    }, [webcontainer, filesByPath])
+    }, [webcontainer, filesByPath, virtualFolders])
+
+    useEffect(() => {
+        if (!webcontainer || !isServerRunningRef.current || virtualFolders.length === 0) {
+            return
+        }
+
+        const syncFolders = async () => {
+            for (const folderPath of virtualFolders) {
+                await webcontainer.fs.mkdir(folderPath, { recursive: true }).catch(() => {})
+            }
+        }
+
+        void syncFolders()
+    }, [webcontainer, virtualFolders])
 
     // Scroll to bottom when messages change
     useEffect(() => {
@@ -376,6 +881,7 @@ export default function ProjectPage() {
     const appendGeneratedFiles = (response: string) => {
         setFilesByPath((prev) => {
             const next = applyBoltActionsToFiles(prev, response)
+            Object.entries(next).forEach(([path, content]) => markFileAsSaved(path, content))
             const filePaths = Object.keys(next)
             if (filePaths.length > 0 && !activeFile) {
                 const firstFile = filePaths[0]
@@ -459,6 +965,7 @@ export default function ProjectPage() {
                 ...assistantMessages.map((msg) => msg.content),
             ])
             setFilesByPath(bootFiles)
+            savedFileContentsRef.current = { ...bootFiles }
 
             const filePaths = Object.keys(bootFiles)
             if (filePaths.length > 0 && !activeFile) {
@@ -474,11 +981,21 @@ export default function ProjectPage() {
             return
         }
 
+        const tempAssistantId = `streaming-hydrate-${Date.now()}`
+        setMessages((prev) => [...prev, {
+            id: tempAssistantId,
+            role: "assistant",
+            content: "",
+            created_at: new Date().toISOString(),
+        }])
+        await streamAssistantMessage(tempAssistantId, assistantContent)
+
         const bootFiles = buildFilesFromResponses([
             templateUiPromptRef.current,
             assistantContent,
         ])
         setFilesByPath(bootFiles)
+        savedFileContentsRef.current = { ...bootFiles }
 
         const filePaths = Object.keys(bootFiles)
         if (filePaths.length > 0 && !activeFile) {
@@ -505,7 +1022,9 @@ export default function ProjectPage() {
             .single()
 
         if (assistantMsg) {
-            setMessages((prev) => [...prev, assistantMsg])
+            setMessages((prev) => prev.map((message) => (
+                message.id === tempAssistantId ? assistantMsg : message
+            )))
         }
     }
 
@@ -542,6 +1061,15 @@ export default function ProjectPage() {
                 return
             }
 
+            const tempAssistantId = `streaming-${Date.now()}`
+            setMessages((prev) => [...prev, {
+                id: tempAssistantId,
+                role: "assistant",
+                content: "",
+                created_at: new Date().toISOString(),
+            }])
+            await streamAssistantMessage(tempAssistantId, assistantContent)
+
             const { data: assistantMsg } = await supabase
                 .from("messages")
                 .insert({
@@ -554,7 +1082,9 @@ export default function ProjectPage() {
                 .single()
 
             if (assistantMsg) {
-                setMessages((prev) => [...prev, assistantMsg])
+                setMessages((prev) => prev.map((message) => (
+                    message.id === tempAssistantId ? assistantMsg : message
+                )))
             }
         } catch (generationError: any) {
             console.error("Error generating follow-up:", generationError)
@@ -593,49 +1123,99 @@ export default function ProjectPage() {
             if (node.type === "folder") {
                 const isExpanded = expandedFolders[node.path] ?? depth < 1
                 return (
-                    <div key={node.path}>
-                        <div
-                            className="flex items-center gap-1.5 px-3 py-1 text-sm text-neutral-300 hover:bg-[#262626]/50 cursor-pointer transition-colors"
-                            style={{ paddingLeft: `${12 + depth * 16}px` }}
-                            onClick={() => {
-                                setExpandedFolders((prev) => ({
-                                    ...prev,
-                                    [node.path]: !isExpanded,
-                                }))
-                            }}
-                        >
-                            <ChevronDown className={`w-3.5 h-3.5 text-neutral-500 transition-transform ${!isExpanded ? "-rotate-90" : ""}`} />
-                            <MaterialIcon name={node.name} type="folder" isOpen={isExpanded} className="w-4 h-4 text-neutral-400" />
-                            <span>{node.name}</span>
-                        </div>
-                        {isExpanded && node.children && (
-                            <div className="relative flex flex-col">
+                    <ContextMenu key={node.path}>
+                        <ContextMenuTrigger asChild>
+                            <div>
                                 <div
-                                    className="absolute top-0 bottom-0 w-px bg-neutral-700/70"
-                                    style={{ left: `${32 + depth * 16}px` }}
-                                />
-                                <div className="relative flex flex-col">{renderFileTree(node.children, depth + 1)}</div>
+                                    className="flex items-center gap-2 px-3 py-1 text-base text-neutral-300 hover:bg-[#262626]/50 cursor-pointer transition-colors"
+                                    style={{ paddingLeft: `${14 + depth * 18}px` }}
+                                    onClick={() => {
+                                        setExpandedFolders((prev) => ({
+                                            ...prev,
+                                            [node.path]: !isExpanded,
+                                        }))
+                                    }}
+                                >
+                                    <ChevronDown className={`w-4 h-4 text-neutral-500 transition-transform ${!isExpanded ? "-rotate-90" : ""}`} />
+                                    <MaterialIcon name={node.name} type="folder" isOpen={isExpanded} className="w-5 h-5 text-neutral-400" />
+                                    <span>{node.name}</span>
+                                </div>
+                                {isExpanded && node.children && (
+                                    <div className="relative flex flex-col">
+                                        <div
+                                            className="absolute top-0 bottom-0 w-px bg-neutral-700/70"
+                                            style={{ left: `${34 + depth * 18}px` }}
+                                        />
+                                        <div className="relative flex flex-col">{renderFileTree(node.children, depth + 1)}</div>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-64 bg-[#111111] border-[#2f2f2f] text-neutral-200">
+                            <ContextMenuItem onClick={() => createFile(node.path)}>New File...</ContextMenuItem>
+                            <ContextMenuItem onClick={() => createFolder(node.path)}>New Folder...</ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => openIntegratedTerminal(node.path)}>Open in Integrated Terminal</ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => deleteFolderByPath(node.path)} variant="destructive">Delete Folder</ContextMenuItem>
+                        </ContextMenuContent>
+                    </ContextMenu>
                 )
             }
 
             const fileName = node.path.split("/").pop() ?? node.path
             const isJson = fileName.endsWith(".json")
             return (
-                <div
-                    key={node.path}
-                    onClick={() => handleOpenFile(node.path, isJson ? "json" : "code")}
-                    style={{ paddingLeft: `${24 + depth * 16}px` }}
-                    className={`flex items-center gap-2 pr-3 py-1 text-sm cursor-pointer transition-colors ${activeFile === node.path ? "text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400" : "text-neutral-400 hover:bg-[#262626]/50 border-l-2 border-transparent"}`}
-                >
-                    <MaterialIcon name={fileName} type="file" className={`w-4 h-4 ${activeFile === node.path ? "text-neutral-300" : "text-neutral-400"}`} />
-                    {fileName}
-                </div>
+                <ContextMenu key={node.path}>
+                    <ContextMenuTrigger asChild>
+                        <div
+                            onClick={() => handleOpenFile(node.path, isJson ? "json" : "code")}
+                            style={{ paddingLeft: `${26 + depth * 18}px` }}
+                            className={`flex items-center gap-3 pr-3 py-1 text-base cursor-pointer transition-colors ${activeFile === node.path ? "text-neutral-100 bg-[#2b2b2b]/70" : "text-neutral-400 hover:bg-[#262626]/50"}`}
+                        >
+                            <MaterialIcon name={fileName} type="file" className={`w-5 h-5 ${activeFile === node.path ? "text-neutral-300" : "text-neutral-400"}`} />
+                            {fileName}
+                        </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-64 bg-[#111111] border-[#2f2f2f] text-neutral-200">
+                        <ContextMenuItem onClick={() => handleOpenFile(node.path, isJson ? "json" : "code")}>Open</ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem onClick={() => navigator.clipboard?.writeText(node.path)}>
+                            Copy Path
+                            <ContextMenuShortcut>Shift+Alt+C</ContextMenuShortcut>
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem onClick={() => deleteFileByPath(node.path)} variant="destructive">Delete File</ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
             )
         })
     }
+
+    const TerminalDots = () => (
+        <div className="flex items-center gap-2">
+            <span className="dot" style={{ animationDelay: '0s' }} />
+            <span className="dot" style={{ animationDelay: '0.15s' }} />
+            <span className="dot" style={{ animationDelay: '0.3s' }} />
+            <style jsx>{`
+                .dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 9999px;
+                    background: rgba(156,163,175,1); /* neutral-400 */
+                    display: inline-block;
+                    transform: scale(0.6);
+                    opacity: 0.25;
+                    animation: dotPulse 1.2s infinite ease-in-out;
+                }
+
+                @keyframes dotPulse {
+                    0%, 80%, 100% { opacity: 0.25; transform: scale(0.6); }
+                    40% { opacity: 1; transform: scale(1); }
+                }
+            `}</style>
+        </div>
+    )
 
     return (
         <div className={`flex h-screen w-full bg-[#121212] text-neutral-100 font-sans antialiased tracking-tight selection:bg-neutral-500/30 overflow-hidden ${isDragging ? 'select-none cursor-col-resize' : ''}`}>
@@ -787,6 +1367,9 @@ export default function ProjectPage() {
                                             }).trim();
                                         }
 
+                                        const parsedAssistant = msg.role === "assistant" ? parseAssistantSections(displayContent) : null
+                                        const isStreamingAssistant = msg.id.startsWith("streaming-")
+
                                         return (
                                         <div
                                             key={msg.id}
@@ -805,7 +1388,17 @@ export default function ProjectPage() {
                                             >
                                                 {msg.role === "assistant" ? (
                                                     <div className="space-y-3">
-                                                        {renderAssistantMessage(displayContent)}
+                                                        {parsedAssistant?.think && (
+                                                            <details open={isStreamingAssistant} className="rounded-lg border border-[#3a3a3a] bg-[#1a1a1a] px-3 py-2">
+                                                                <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                                                                    Thinking
+                                                                </summary>
+                                                                <div className="mt-2 text-sm">
+                                                                    {renderMarkdown(parsedAssistant.think, true)}
+                                                                </div>
+                                                            </details>
+                                                        )}
+                                                        {renderMarkdown(parsedAssistant?.answer || displayContent)}
                                                     </div>
                                                 ) : (
                                                     displayContent
@@ -985,21 +1578,34 @@ export default function ProjectPage() {
                             {/* --- CODE VIEW --- */}
                             <div className={`flex flex-1 w-full h-full animate-in fade-in duration-200 ${activeView === 'code' ? '' : 'hidden'}`}>
                                     {/* File Explorer Sidebar */}
-                                    <div className="w-64 flex flex-col bg-[#171717] border-r border-[#262626] shrink-0">
-                                        <div className="h-10 flex items-center justify-between px-3 shrink-0">
-                                            <span className="text-[11px] font-semibold text-neutral-400 tracking-wider">EXPLORER</span>
+                                    <div className="w-72 flex flex-col bg-[#171717] border-r border-[#262626] shrink-0">
+                                        <div className="h-9 flex items-center justify-between px-3 shrink-0">
+                                            <span className="text-sm font-semibold text-neutral-400 tracking-wider">EXPLORER</span>
                                             <div className="flex items-center gap-1">
-                                                <button className="p-1 text-neutral-500 hover:text-neutral-300 hover:bg-[#262626]/50 rounded"><Plus className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => createFile()} className="p-1 text-neutral-500 hover:text-neutral-200 hover:bg-[#262626]/50 rounded transition-colors" title="New File"><FilePlus className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => createFolder()} className="p-1 text-neutral-500 hover:text-neutral-200 hover:bg-[#262626]/50 rounded transition-colors" title="New Folder"><FolderPlus className="w-3.5 h-3.5" /></button>
                                                 <button className="p-1 text-neutral-500 hover:text-neutral-300 hover:bg-[#262626]/50 rounded"><MoreHorizontal className="w-3.5 h-3.5" /></button>
                                             </div>
                                         </div>
-                                        <div className="flex-1 overflow-y-auto py-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
-                                            <div className="flex flex-col">
-                                                {fileTree.length > 0 ? renderFileTree(fileTree) : (
-                                                    <div className="px-3 py-2 text-xs text-neutral-500">No generated files yet.</div>
-                                                )}
-                                            </div>
-                                        </div>
+                                        <ContextMenu>
+                                            <ContextMenuTrigger asChild>
+                                                <div className="flex-1 overflow-y-auto pt-0 pb-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
+                                                    <div className="flex flex-col">
+                                                        {fileTree.length > 0 ? renderFileTree(fileTree) : (
+                                                            <div className="px-3 py-2 text-xs text-neutral-500">No generated files yet.</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </ContextMenuTrigger>
+                                            <ContextMenuContent className="w-72 bg-[#111111] border-[#2f2f2f] text-neutral-200">
+                                                <ContextMenuItem onClick={() => createFile()}>New File...</ContextMenuItem>
+                                                <ContextMenuItem onClick={() => createFolder()}>New Folder...</ContextMenuItem>
+                                                <ContextMenuSeparator />
+                                                <ContextMenuItem onClick={() => openIntegratedTerminal()}>Open in Integrated Terminal</ContextMenuItem>
+                                                <ContextMenuSeparator />
+                                                <ContextMenuItem onClick={() => navigator.clipboard?.writeText(getTargetFolderPath() || ".")}>Copy Path</ContextMenuItem>
+                                            </ContextMenuContent>
+                                        </ContextMenu>
                                     </div>
 
                                     {/* Right Side: Editor + Terminal Wrapper */}
@@ -1029,12 +1635,16 @@ export default function ProjectPage() {
                                                         <MaterialIcon name={file.name} type="file" className={`w-4 h-4 ${activeFile === file.id ? 'text-neutral-300' : 'text-neutral-500'}`} />
                                                     )}
                                                     {file.name}
-                                                    <button
-                                                        onClick={(e) => handleCloseFile(e, file.id)}
-                                                        className={`ml-2 p-0.5 rounded transition-colors ${activeFile === file.id ? 'text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]' : 'opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]'}`}
-                                                    >
-                                                        <X className="w-3.5 h-3.5" />
-                                                    </button>
+                                                    {isFileDirty(file.id) ? (
+                                                        <span className="ml-2 inline-block h-2 w-2 rounded-full bg-neutral-400" title="Unsaved changes" />
+                                                    ) : (
+                                                        <button
+                                                            onClick={(e) => handleCloseFile(e, file.id)}
+                                                            className={`ml-2 p-0.5 rounded transition-colors ${activeFile === file.id ? 'text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]' : 'opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-neutral-300 hover:bg-[#333333]'}`}
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                     {activeFile === file.id && (
                                                         <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-[#171717]" />
                                                     )}
@@ -1060,22 +1670,52 @@ export default function ProjectPage() {
                                                         }
                                                     }}
                                                     beforeMount={handleEditorWillMount}
-                                                    onMount={(_, monaco) => {
+                                                    onMount={(editor, monaco) => {
+                                                        editorRef.current = editor
                                                         void initializeShikiMonaco(monaco)
+                                                        editor.addAction({
+                                                            id: "format-active-file",
+                                                            label: "Format Document",
+                                                            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+                                                            run: async () => {
+                                                                await formatActiveFile()
+                                                            },
+                                                        })
+                                                        editor.addAction({
+                                                            id: "format-active-file-alt",
+                                                            label: "Format Document (Alt)",
+                                                            keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
+                                                            run: async () => {
+                                                                await formatActiveFile()
+                                                            },
+                                                        })
                                                     }}
                                                     options={{
                                                         minimap: { enabled: false },
-                                                        fontSize: 13,
+                                                        fontSize: editorFontSize,
                                                         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                                                         lineHeight: 22,
                                                         padding: { top: 16 },
                                                         scrollBeyondLastLine: false,
                                                         smoothScrolling: true,
+                                                        automaticLayout: true,
                                                         cursorBlinking: "smooth",
                                                         renderLineHighlight: "all",
                                                         overviewRulerBorder: false,
                                                         hideCursorInOverviewRuler: true,
                                                         wordWrap: "on",
+                                                        quickSuggestions: {
+                                                            other: true,
+                                                            comments: false,
+                                                            strings: true,
+                                                        },
+                                                        suggestOnTriggerCharacters: true,
+                                                        parameterHints: { enabled: true },
+                                                        acceptSuggestionOnEnter: "smart",
+                                                        tabCompletion: "on",
+                                                        snippetSuggestions: "inline",
+                                                        formatOnType: true,
+                                                        formatOnPaste: true,
                                                         scrollbar: {
                                                             verticalScrollbarSize: 8,
                                                             horizontalScrollbarSize: 8,
@@ -1120,7 +1760,12 @@ export default function ProjectPage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="p-4 font-mono text-sm text-neutral-300 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
+                                                <div className="p-4 font-mono text-sm text-neutral-200 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#333] hover:[&::-webkit-scrollbar-thumb]:bg-[#555] [&::-webkit-scrollbar-thumb]:rounded-full">
+                                                    {terminalLoading && (
+                                                        <div className="mb-3">
+                                                            <TerminalDots />
+                                                        </div>
+                                                    )}
                                                     {terminalLogs.length > 0 ? terminalLogs.map((line, index) => (
                                                         <div 
                                                             key={`${index}-${line.slice(0, 20)}`} 

@@ -84,13 +84,37 @@ export default function SynthetixFooter() {
             allowNonTsExtensions: true,
             allowJs: true,
             target: monaco.languages.typescript.ScriptTarget.Latest,
+            moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+            module: monaco.languages.typescript.ModuleKind.ESNext,
+            esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            resolveJsonModule: true,
         });
+
+        monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+            jsx: monaco.languages.typescript.JsxEmit.React,
+            jsxFactory: 'React.createElement',
+            reactNamespace: 'React',
+            allowNonTsExtensions: true,
+            allowJs: true,
+            target: monaco.languages.typescript.ScriptTarget.Latest,
+            moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+            module: monaco.languages.typescript.ModuleKind.ESNext,
+            esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            resolveJsonModule: true,
+        })
 
         // 3. Turn off semantic validation to prevent "Cannot find module" red lines
         monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-            noSemanticValidation: true,
+            noSemanticValidation: false,
             noSyntaxValidation: false,
         });
+
+        monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+            noSemanticValidation: false,
+            noSyntaxValidation: false,
+        })
     }
 
     useEffect(() => {
@@ -339,7 +363,7 @@ export default function SynthetixFooter() {
                                             </div>
                                             {isComponentsOpen && (
                                                 <div className="flex flex-col">
-                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-100 bg-[#262626]/50 border-l-2 border-l-neutral-400 cursor-pointer">
+                                                    <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-100 bg-[#2b2b2b]/70 cursor-pointer">
                                                         <MaterialIcon name="synthetix-footer.tsx" type="file" className="w-4 h-4 text-neutral-300" /> synthetix-footer.tsx
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-9 pr-3 py-1 text-sm text-neutral-400 hover:bg-[#262626]/50 cursor-pointer">
@@ -405,6 +429,16 @@ export default function SynthetixFooter() {
                                                 padding: { top: 16 },
                                                 scrollBeyondLastLine: false,
                                                 smoothScrolling: true,
+                                                formatOnType: true,
+                                                formatOnPaste: true,
+                                                quickSuggestions: {
+                                                    other: true,
+                                                    comments: false,
+                                                    strings: true,
+                                                },
+                                                suggestOnTriggerCharacters: true,
+                                                parameterHints: { enabled: true },
+                                                tabCompletion: "on",
                                                 cursorBlinking: "smooth",
                                                 renderLineHighlight: "all",
                                                 overviewRulerBorder: false,

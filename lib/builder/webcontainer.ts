@@ -2,8 +2,24 @@ import type { FileSystemTree } from "@webcontainer/api";
 
 import type { FileMap } from "@/lib/builder/bolt";
 
-export function buildWebContainerTree(files: FileMap): FileSystemTree {
+export function buildWebContainerTree(files: FileMap, extraDirectories: string[] = []): FileSystemTree {
   const tree: FileSystemTree = {};
+
+  for (const directoryPath of extraDirectories) {
+    const segments = directoryPath.split("/").filter(Boolean);
+    if (segments.length === 0) {
+      continue;
+    }
+
+    let cursor: any = tree;
+    for (const segment of segments) {
+      if (!cursor[segment]?.directory) {
+        cursor[segment] = { directory: {} };
+      }
+
+      cursor = cursor[segment].directory;
+    }
+  }
 
   for (const [filePath, content] of Object.entries(files)) {
     const segments = filePath.split("/").filter(Boolean);
@@ -43,7 +59,7 @@ export type FileTreeNode = {
   children?: FileTreeNode[];
 };
 
-export function fileMapToTree(files: FileMap): FileTreeNode[] {
+export function fileMapToTree(files: FileMap, extraFolders: string[] = []): FileTreeNode[] {
   const root: FileTreeNode[] = [];
 
   const ensureFolder = (nodes: FileTreeNode[], path: string, name: string): FileTreeNode => {
@@ -61,6 +77,23 @@ export function fileMapToTree(files: FileMap): FileTreeNode[] {
     nodes.push(folder);
     return folder;
   };
+
+  for (const folderPath of extraFolders) {
+    const segments = folderPath.split("/").filter(Boolean);
+    if (segments.length === 0) {
+      continue;
+    }
+
+    let cursor = root;
+    let currentPath = "";
+
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      const folder = ensureFolder(cursor, currentPath, segment);
+      cursor = folder.children ?? [];
+      folder.children = cursor;
+    }
+  }
 
   for (const filePath of Object.keys(files)) {
     const segments = filePath.split("/").filter(Boolean);
