@@ -366,7 +366,6 @@ const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             ref={ref}
             className={cn(
               "rounded-3xl border border-[#444444] bg-[#1F2023] p-2 shadow-[0_8px_30px_rgba(0,0,0,0.24)] transition-all duration-300",
-              isLoading && "border-red-500/70",
               className
             )}
             onDragOver={onDragOver}
@@ -462,15 +461,18 @@ const PromptInputAction: React.FC<PromptInputActionProps> = ({
 
 // Main PromptInputBox Component
 interface PromptInputBoxProps {
-  onSend?: (message: string, files?: File[]) => void;
+  onSend?: (message: string, model: "v0 mini" | "v0 pro", files?: File[]) => void;
+  onStop?: () => void;
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
+  defaultModel?: "v0 mini" | "v0 pro";
 }
 export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref: React.Ref<HTMLDivElement>) => {
-  const { onSend = () => { }, isLoading = false, placeholder = "Type your message here...", className } = props;
+  const { onSend = () => { }, onStop, isLoading = false, placeholder = "Type your message here...", className, defaultModel = "v0 mini" } = props;
   const [input, setInput] = React.useState("");
   const [files, setFiles] = React.useState<File[]>([]);
+  const [selectedModel, setSelectedModel] = React.useState<"v0 mini" | "v0 pro">(defaultModel);
   const [filePreviews, setFilePreviews] = React.useState<{ [key: string]: string }>({});
   const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
   const [isRecording, setIsRecording] = React.useState(false);
@@ -547,7 +549,7 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
 
   const handleSubmit = () => {
     if (input.trim() || files.length > 0) {
-      onSend(input, files);
+      onSend(input, selectedModel, files);
       setInput("");
       setFiles([]);
       setFilePreviews({});
@@ -795,15 +797,21 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
                   disabled={isRecording}
                 >
                   <Target className="h-4 w-4" />
-                  <span className="text-sm font-medium">v0 Mini</span>
+                  <span className="text-sm font-medium">{selectedModel === "v0 mini" ? "v0 Mini" : "v0 Pro"}</span>
                   <ChevronDown className="h-3.5 w-3.5 opacity-70" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="bg-[#1F2023] border-[#333333] text-gray-200 min-w-[140px]">
-                <DropdownMenuItem className="hover:bg-[#333333] focus:bg-[#333333] cursor-pointer">
+                <DropdownMenuItem 
+                  className={`hover:bg-[#333333] focus:bg-[#333333] cursor-pointer ${selectedModel === "v0 mini" ? "text-white" : "text-gray-400"}`}
+                  onClick={() => setSelectedModel("v0 mini")}
+                >
                   <Target className="mr-2 h-4 w-4" /> v0 Mini
                 </DropdownMenuItem>
-                <DropdownMenuItem className="hover:bg-[#333333] focus:bg-[#333333] cursor-pointer text-gray-400">
+                <DropdownMenuItem 
+                  className={`hover:bg-[#333333] focus:bg-[#333333] cursor-pointer ${selectedModel === "v0 pro" ? "text-white" : "text-gray-400"}`}
+                  onClick={() => setSelectedModel("v0 pro")}
+                >
                   <Target className="mr-2 h-4 w-4" /> v0 Pro
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -826,21 +834,23 @@ export const PromptInputBox = React.forwardRef((props: PromptInputBoxProps, ref:
               size="icon"
               className={cn(
                 "h-8 w-8 rounded-full transition-all duration-200",
-                isRecording
-                  ? "bg-transparent hover:bg-gray-600/30 text-red-500 hover:text-red-400"
-                  : hasContent
-                    ? "bg-white hover:bg-white/80 text-[#1F2023]"
-                    : "bg-transparent hover:bg-gray-600/30 text-[#9CA3AF] hover:text-[#D1D5DB]"
+                isLoading
+                  ? "bg-[#333333] hover:bg-[#444444] text-white"
+                  : isRecording
+                    ? "bg-transparent hover:bg-gray-600/30 text-red-500 hover:text-red-400"
+                    : hasContent
+                      ? "bg-white hover:bg-white/80 text-[#1F2023]"
+                      : "bg-transparent hover:bg-gray-600/30 text-[#9CA3AF] hover:text-[#D1D5DB]"
               )}
               onClick={() => {
+                if (isLoading) { onStop?.(); return; }
                 if (isRecording) handleStopRecording();
                 else if (hasContent) handleSubmit();
                 else handleStartRecording();
               }}
-              disabled={isLoading && !hasContent}
             >
               {isLoading ? (
-                <Square className="h-4 w-4 fill-[#1F2023] animate-pulse" />
+                <Square className="h-3 w-3 fill-white text-white" />
               ) : isRecording ? (
                 <StopCircle className="h-5 w-5 text-red-500" />
               ) : hasContent ? (

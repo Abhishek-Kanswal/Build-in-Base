@@ -7,9 +7,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar"
-import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@clerk/nextjs"
+import type { ProjectDto } from "@/lib/data"
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Image from "next/image"
@@ -23,46 +23,37 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons"
 
-interface Project {
-  id: string
-  title: string
-  created_at: string
-}
-
 export function NavProjects() {
-  const { isMobile } = useSidebar()
   const pathname = usePathname()
   const router = useRouter()
-  const [projects, setProjects] = useState<Project[]>([])
+  const { isSignedIn } = useAuth()
+  const [projects, setProjects] = useState<ProjectDto[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const fetchProjects = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (!user) {
+      if (!isSignedIn) {
         setIsLoading(false)
         return
       }
 
-      const { data, error } = await supabase
-        .from("projects")
-        .select("id, title, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(20)
+      try {
+        const res = await fetch("/api/projects", { cache: "no-store" })
+        const payload = await res.json()
 
-      if (error) {
+        if (!res.ok) {
+          throw new Error(payload?.message || "Failed to fetch projects")
+        }
+
+        setProjects(payload.projects || [])
+      } catch (error) {
         console.error("Error fetching projects:", error)
-      } else {
-        setProjects(data || [])
       }
       setIsLoading(false)
     }
 
     fetchProjects()
-  }, [])
+  }, [isSignedIn])
 
   const handleDeleteProject = async (projectId: string) => {
     const prevProjects = [...projects]
@@ -73,14 +64,13 @@ export function NavProjects() {
     }
 
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from("projects")
-        .delete()
-        .eq("id", projectId)
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      })
 
-      if (error) {
-        throw error
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new Error(payload?.message || "Failed to delete project")
       }
 
       router.refresh()

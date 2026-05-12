@@ -1,7 +1,5 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,10 +32,12 @@ import {
   X,
   ChevronDown,
   Loader2,
+  Target,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Dock, DockIcon } from "@/components/dock"
 
@@ -152,16 +152,14 @@ const PLACEHOLDER_PHRASES = [
   "What are we shipping today?",
 ];
 
-export default function ChatInput({
-  onSubmit,
-}: {
-  onSubmit?: (prompt: string, chainId: string) => void;
-}) {
+export default function ChatInput() {
   const router = useRouter();
+  const { isSignedIn } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [selectedChain, setSelectedChain] = useState(CHAINS[0]);
+  const [selectedModel, setSelectedModel] = useState<"v0 mini" | "v0 pro">("v0 mini");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -206,12 +204,8 @@ export default function ChatInput({
     setIsSubmitting(true);
 
     try {
-      const supabase = createClient();
-
-      // 1. Verify auth first (security)
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error("Not authenticated");
+      if (!isSignedIn) {
+        router.push("/login");
         setIsSubmitting(false);
         return;
       }
@@ -224,38 +218,30 @@ export default function ChatInput({
         : trimmedPrompt;
 
       // 3. Navigate immediately (optimistic)
-      router.push(`/project/${projectId}`);
+      router.push(`/project/${projectId}?model=${encodeURIComponent(selectedModel)}`);
 
-      // 4. Fire DB inserts in background (non-blocking)
-      supabase
-        .from("projects")
-        .insert({
+      // 4. Fire DB writes in the background (non-blocking)
+      fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           id: projectId,
-          user_id: user.id,
           title: tempTitle,
-          chain_id: selectedChain.id,
-        })
-        .then(({ error: projectError }) => {
-          if (projectError) {
-            console.error("Failed to create project:", projectError);
-            return;
+          chainId: selectedChain.id,
+          prompt: trimmedPrompt,
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const payload = await res.json().catch(() => null);
+            throw new Error(payload?.message || "Failed to create project");
           }
 
-          // Insert initial message
-          supabase
-            .from("messages")
-            .insert({
-              project_id: projectId,
-              user_id: user.id,
-              role: "user",
-              content: trimmedPrompt,
-            })
-            .then(({ error: msgError }) => {
-              if (msgError) console.error("Failed to create message:", msgError);
-            });
-
+          return res.json();
+        })
+        .then(() => {
           // 5. Generate smart AI title in background via /api/chat
-          fetch("/api/chat", {
+          return fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -266,22 +252,30 @@ export default function ChatInput({
                 },
               ],
             }),
-          })
-            .then((res) => res.json())
-            .then(({ response: aiTitle }) => {
-              if (aiTitle) {
-                const cleanTitle = aiTitle.replace(/['"]/g, "").trim().substring(0, 60);
-                supabase
-                  .from("projects")
-                  .update({ title: cleanTitle })
-                  .eq("id", projectId)
-                  .then(({ error }) => {
-                    if (error) console.error("Failed to update title:", error);
-                  });
+          });
+        })
+        .then((res) => res.json())
+        .then(({ response: aiTitle }) => {
+          if (aiTitle) {
+            let parsedTitle = aiTitle.replace(/<think>[\s\S]*?<\/think>/gi, "");
+            const cleanTitle = parsedTitle.replace(/['"]/g, "").trim().substring(0, 60);
+
+            return fetch(`/api/projects/${projectId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: cleanTitle }),
+            }).then(async (res) => {
+              if (!res.ok) {
+                const payload = await res.json().catch(() => null);
+                throw new Error(payload?.message || "Failed to update title");
               }
-            })
-            .catch((err) => console.error("Title generation failed:", err));
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("Project bootstrap failed:", error);
         });
+      setIsSubmitting(false);
     } catch (error) {
       console.error("Error creating project:", error);
       setIsSubmitting(false);
@@ -525,6 +519,39 @@ export default function ChatInput({
                           }
                         />
                       </div>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Model Selector */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      className="h-11 rounded-lg px-3 ml-1 text-muted-foreground hover:text-foreground flex items-center gap-2 transition-colors focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0 bg-transparent hover:bg-muted/50"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Target className="w-4 h-4 opacity-70" strokeWidth={2} />
+                      <span className="text-sm font-medium hidden sm:inline-block">
+                        {selectedModel === "v0 mini" ? "v0 Mini" : "v0 Pro"}
+                      </span>
+                      <ChevronDown className="w-4 h-4 opacity-50" strokeWidth={2} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-36 rounded-xl p-2">
+                    <DropdownMenuGroup className="space-y-1">
+                      <DropdownMenuItem
+                        className={cn("rounded-lg text-sm py-2 cursor-pointer font-medium flex items-center gap-2", selectedModel === "v0 mini" ? "bg-muted" : "")}
+                        onClick={() => setSelectedModel("v0 mini")}
+                      >
+                        <Target className="w-4 h-4" /> v0 Mini
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className={cn("rounded-lg text-sm py-2 cursor-pointer font-medium flex items-center gap-2", selectedModel === "v0 pro" ? "bg-muted" : "")}
+                        onClick={() => setSelectedModel("v0 pro")}
+                      >
+                        <Target className="w-4 h-4" /> v0 Pro
+                      </DropdownMenuItem>
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>

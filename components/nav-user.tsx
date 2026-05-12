@@ -1,6 +1,6 @@
 "use client"
 
-import { useRouter } from "next/navigation"
+import { useClerk } from "@clerk/nextjs"
 import {
   BadgeCheck,
   Bell,
@@ -51,12 +51,10 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
-  const router = useRouter()
+  const { signOut } = useClerk()
 
   const handleLogout = async () => {
-    await fetch("/auth/signout", { method: "POST" })
-    router.push("/login")
-    router.refresh()
+    await signOut({ redirectUrl: "/login" })
   }
 
   const initials = getInitials(user.name || user.email.split("@")[0] || "U")

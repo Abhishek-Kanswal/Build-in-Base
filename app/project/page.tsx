@@ -13,13 +13,15 @@ import { MaterialIcon } from "@/lib/material-icons"
 import { PromptInputBox } from "@/components/ai-prompt-box"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
-import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@clerk/nextjs"
 import Editor from "@monaco-editor/react"
+import { toAppUser } from "@/lib/auth"
 
 export default function ProjectPage() {
     const [sidebarWidth, setSidebarWidth] = useState(550)
     const [isDragging, setIsDragging] = useState(false)
-    const [user, setUser] = useState<{ name: string; email: string; avatar: string } | null>(null)
+    const { user: clerkUser } = useUser()
+    const user = toAppUser(clerkUser)
 
     // View state: 'preview' or 'code'
     const [activeView, setActiveView] = useState<'preview' | 'code'>('code')
@@ -116,19 +118,6 @@ export default function SynthetixFooter() {
             noSyntaxValidation: false,
         })
     }
-
-    useEffect(() => {
-        const supabase = createClient()
-        supabase.auth.getUser().then(({ data: { user: authUser } }) => {
-            if (authUser) {
-                setUser({
-                    name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split("@")[0] || "User",
-                    email: authUser.email || "",
-                    avatar: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || "",
-                })
-            }
-        })
-    }, [])
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {

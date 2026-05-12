@@ -1,7 +1,7 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { Command, LogOut, BadgeCheck, CreditCard, Bell, Sparkles, Zap } from "lucide-react"
+import { useClerk } from "@clerk/nextjs"
+import { LogOut, BadgeCheck, CreditCard, Bell, Sparkles } from "lucide-react"
 import { RainbowButton } from "@/components/ui/rainbow-button"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -40,12 +40,10 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({ user }: SiteHeaderProps) {
-  const router = useRouter()
+  const { signOut } = useClerk()
 
   const handleLogout = async () => {
-    await fetch("/auth/signout", { method: "POST" })
-    router.push("/login")
-    router.refresh()
+    await signOut({ redirectUrl: "/login" })
   }
 
   const initials = user ? getInitials(user.name || user.email.split("@")[0] || "U") : ""
@@ -138,8 +136,8 @@ export function SiteHeader({ user }: SiteHeaderProps) {
               <Button variant="ghost">
                 Pricing
               </Button>
-              <Button variant="ghost">
-                Sign In
+              <Button asChild variant="ghost">
+                <Link href="/login">Sign In</Link>
               </Button>
             </div>
             <Link href="/login">

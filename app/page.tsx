@@ -1,26 +1,15 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { SiteHeader } from "@/components/site-header"
-import ChatInput from "@/components/chatInput"
-import { ProjectsSection } from "@/components/projects-section"
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
-import { createClient } from "@/lib/supabase/server"
+import { auth, currentUser } from "@clerk/nextjs/server";
+
+import { AppSidebar } from "@/components/app-sidebar";
+import ChatInput from "@/components/chatInput";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { toAppUser } from "@/lib/auth";
 
 export default async function Page() {
-  const supabase = await createClient()
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser()
-
-  const user = authUser
-    ? {
-      name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split("@")[0] || "User",
-      email: authUser.email || "",
-      avatar: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || "",
-    }
-    : null
+  const { userId } = await auth();
+  const clerkUser = userId ? await currentUser() : null;
+  const user = toAppUser(clerkUser);
 
   return (
     <div className="[--header-height:calc(--spacing(14))]">
@@ -34,11 +23,9 @@ export default async function Page() {
                 <ChatInput />
               </div>
             </div>
-            {/* Scrollable Projects Section */}
-            <ProjectsSection />
           </div>
         </SidebarInset>
       </SidebarProvider>
     </div>
-  )
+  );
 }

@@ -39,3 +39,23 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Prisma
+*.db
+*.db-journal
+*.sqlite
+
+# IDE / Editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.vscode-test/
+.idea/
+
+# Agent/Scratch output files
+build_output.txt
+new_main.txt
+page_return_block.txt
+scratch/

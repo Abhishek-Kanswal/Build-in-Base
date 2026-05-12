@@ -4,13 +4,9 @@ import * as React from "react"
 import {
   BookOpen,
   Bot,
-  Frame,
   LifeBuoy,
-  Map,
   Send,
   Settings2,
-  SquareTerminal,
-  Command,
   Home,
 } from "lucide-react"
 
@@ -23,10 +19,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarHeader,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
 } from "@/components/ui/sidebar"
 
 const data = {
