@@ -59,3 +59,8 @@ build_output.txt
 new_main.txt
 page_return_block.txt
 scratch/
+
+# Skills / Agents
+.agents/
+skills-lock.json
+*.mde

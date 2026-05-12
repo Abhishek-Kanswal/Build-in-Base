@@ -8,9 +8,25 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model User {
+  id        String   @id
+  email     String   @unique
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  projects  Project[]
+  messages  Message[]
+
+  @@map("users")
+}
+
 model Project {
   id        String    @id
   userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   chainId   String    @default("eth") @map("chain_id")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -25,6 +41,7 @@ model Message {
   id        String   @id @default(cuid())
   projectId String   @map("project_id")
   userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role
   content   String
   createdAt DateTime @default(now()) @map("created_at")
