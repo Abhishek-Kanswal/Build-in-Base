@@ -892,6 +892,11 @@ declare module "next/image" {
         console.log("Committed to GitHub successfully!");
     }
 
+    // Lifecycle REFs
+    const prevFilesRef = useRef<FileMap>({})
+    const installedDepsHashRef = useRef<string | null>(null)
+    const installPromiseRef = useRef<Promise<void> | null>(null)
+
     // Reset state when navigating to a new project
     const prevChatIdRef = useRef(chatId)
     useEffect(() => {
@@ -906,7 +911,7 @@ declare module "next/image" {
             hasHydratedRef.current = false
             isServerRunningRef.current = false
             prevFilesRef.current = {}
-            depsInstalledRef.current = false
+            installedDepsHashRef.current = null
             installPromiseRef.current = null
             if (webcontainerProcessRef.current) {
                 webcontainerProcessRef.current.kill()
@@ -967,10 +972,6 @@ declare module "next/image" {
             }])
         })
     }, [isLoadingMessages, messages])
-
-    const prevFilesRef = useRef<FileMap>({})
-    const installedDepsHashRef = useRef<string | null>(null)
-    const installPromiseRef = useRef<Promise<void> | null>(null)
 
     const getDepsHash = (pkgStr?: string) => {
         if (!pkgStr) return "";
