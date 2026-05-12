@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useCallback } from "react"
 import { Loader2, X, Maximize2, Minimize2 } from "lucide-react"
 
+import "@xterm/xterm/css/xterm.css"
+
 // Lazy-load xterm to avoid SSR issues
 let Terminal: any = null
 let FitAddon: any = null

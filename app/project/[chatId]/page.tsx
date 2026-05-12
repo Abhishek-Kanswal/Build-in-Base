@@ -969,38 +969,54 @@ declare module "next/image" {
     }, [isLoadingMessages, messages])
 
     const prevFilesRef = useRef<FileMap>({})
-    const depsInstalledRef = useRef(false)
+    const installedDepsHashRef = useRef<string | null>(null)
     const installPromiseRef = useRef<Promise<void> | null>(null)
 
-    // ── Phase A: Pre-install dependencies while AI is still generating ──
-    // This runs as soon as we have a package.json + webcontainer, WITHOUT waiting for isGenerating
+    const getDepsHash = (pkgStr?: string) => {
+        if (!pkgStr) return "";
+        try {
+            const parsed = JSON.parse(pkgStr);
+            return JSON.stringify({ d: parsed.dependencies || {}, dev: parsed.devDependencies || {} });
+        } catch {
+            return "";
+        }
+    };
+
+    // ── Phase A: Auto-Install Dependencies ──
+    // Runs instantly on package.json creation, and re-runs if dependencies change mid-stream.
     useEffect(() => {
-        if (!webcontainer || depsInstalledRef.current || installPromiseRef.current) return
+        if (!webcontainer || installPromiseRef.current) return
 
         const pkgJson = filesByPath["package.json"]
         if (!pkgJson) return
 
-        const preInstall = async () => {
-            try {
-                console.log("[wc-boot] Phase A: Pre-installing dependencies...")
+        const currentHash = getDepsHash(pkgJson);
+        // Only install if we haven't already installed this exact dependency tree payload
+        if (installedDepsHashRef.current === currentHash) return;
 
-                // Inject lockfile into a minimal file set (just package.json + lockfile + config files)
+        const installDeps = async () => {
+            // Lock this specific hash so we don't accidentally run parallel installations
+            installedDepsHashRef.current = currentHash
+            
+            try {
+                console.log("[wc-boot] Phase A: Installing dependencies...")
+                
+                // If the dev server is actively running during a dependency change, we must kill it first.
+                if (webcontainerProcessRef.current) {
+                    try {
+                        webcontainerProcessRef.current.kill()
+                        isServerRunningRef.current = false
+                    } catch { /* ignore */ }
+                }
+
+                // Mount minimal config files to allow dependency resolution safely
                 const minimalFiles: FileMap = {}
                 for (const [path, content] of Object.entries(filesByPath)) {
-                    // Include package.json, lockfiles, and config files only (not source files)
                     if (
-                        path === "package.json" ||
-                        path === "package-lock.json" ||
-                        path.endsWith(".config.js") ||
-                        path.endsWith(".config.ts") ||
-                        path.endsWith(".config.mjs") ||
-                        path === "tsconfig.json" ||
-                        path === "tsconfig.app.json" ||
-                        path === "tsconfig.node.json" ||
-                        path === "postcss.config.js" ||
-                        path === "next.config.mjs" ||
-                        path === "tailwind.config.js" ||
-                        path === "tailwind.config.ts"
+                        path === "package.json" || path === "package-lock.json" ||
+                        path.endsWith(".config.js") || path.endsWith(".config.ts") || path.endsWith(".config.mjs") ||
+                        path.startsWith("tsconfig") || path === "next.config.mjs" || path === "vite.config.ts" ||
+                        path === "tailwind.config.js" || path === "tailwind.config.ts"
                     ) {
                         minimalFiles[path] = content
                     }
@@ -1009,13 +1025,11 @@ declare module "next/image" {
                 const filesWithLock = await injectLockfile(minimalFiles)
                 await webcontainer.mount(buildWebContainerTree(filesWithLock, virtualFolders))
 
-                // Listen for server-ready
                 webcontainer.on("server-ready", (_port, url) => {
                     setPreviewUrl((prev) => prev !== url ? url : prev)
                     setTerminalLoading(false)
                 })
 
-                // Check IndexedDB cache
                 const pkgHash = await hashPackageJson(pkgJson)
                 let cacheHit = false
 
@@ -1023,37 +1037,31 @@ declare module "next/image" {
                     try {
                         const cachedSnapshot = await getCachedSnapshot(pkgHash)
                         if (cachedSnapshot && Object.keys(cachedSnapshot).length > 0) {
-                            setTerminalLogs(["$ [cache] Restoring node_modules from browser cache..."])
+                            setTerminalLogs(prev => [...prev, "\n$ [cache] Restoring node_modules..."])
                             setTerminalLoading(true)
-
                             await webcontainer.mount(cachedSnapshot)
-
+                            
                             try {
                                 const chmodProcess = await webcontainer.spawn("chmod", ["+x", "node_modules/.bin/vite", "node_modules/.bin/next"])
                                 await chmodProcess.exit
                             } catch (e) {
                                 console.warn("[wc-boot] chmod failed:", e)
                             }
-
+                            
                             appendTerminalOutput("\n✓ Restored from cache\n")
                             cacheHit = true
-                            console.log(`[wc-boot] Cache HIT for hash ${pkgHash}`)
                         }
                     } catch (cacheErr) {
                         console.warn("[wc-boot] Cache restore failed:", cacheErr)
                     }
                 }
 
-                // npm install (if cache miss)
                 if (!cacheHit) {
-                    setTerminalLogs(["$ npm install --prefer-offline --no-audit --no-fund --no-progress --loglevel=error"])
+                    setTerminalLogs(prev => [...prev, "\n$ pnpm install --no-frozen-lockfile"])
                     setTerminalLoading(true)
 
-                    const installProcess = await webcontainer.spawn("npm", ["install", "--prefer-offline", "--no-audit", "--no-fund", "--no-progress", "--loglevel=error", "--legacy-peer-deps"], {
-                        env: {
-                            NPM_CONFIG_PROGRESS: "false",
-                            npm_config_progress: "false",
-                        },
+                    const installProcess = await webcontainer.spawn("pnpm", ["install", "--no-frozen-lockfile"], {
+                        env: { NPM_CONFIG_PROGRESS: "false", npm_config_progress: "false" },
                     })
                     let installErrorText = ""
                     installProcess.output.pipeTo(
@@ -1065,42 +1073,45 @@ declare module "next/image" {
                             },
                         })
                     )
+                    
                     const exitCode = await installProcess.exit
                     if (exitCode !== 0) {
                         handleBuildError(installErrorText)
+                        installedDepsHashRef.current = null // Allow retrying on failure
                         return
                     }
 
-                    // Cache the snapshot
                     if (pkgHash) {
                         try {
                             const snapshot = await webcontainer.export(".", { format: "json" })
                             if (snapshot && Object.keys(snapshot).length > 0) {
                                 await setCachedSnapshot(pkgHash, snapshot)
-                                console.log(`[wc-boot] Cached snapshot for hash ${pkgHash}`)
                             }
-                        } catch (exportErr) {
-                            console.warn("[wc-boot] Failed to cache snapshot:", exportErr)
-                        }
+                        } catch (exportErr) { /* ignore */ }
                     }
                 }
-
-                depsInstalledRef.current = true
                 console.log("[wc-boot] Phase A complete: Dependencies ready")
             } catch (error) {
                 console.error("[wc-boot] Phase A failed:", error)
+                installedDepsHashRef.current = null
+            } finally {
+                installPromiseRef.current = null
+                setTerminalLoading(false)
             }
         }
 
-        installPromiseRef.current = preInstall()
+        installPromiseRef.current = installDeps()
     }, [webcontainer, filesByPath, virtualFolders])
 
-    // ── Phase B: Sync source files and start dev server after AI finishes ──
+    // ── Phase B: Sync source files and start dev server ──
     useEffect(() => {
         if (!webcontainer || Object.keys(filesByPath).length === 0) return
         if (filesByPath === prevFilesRef.current) return
 
-        // If server is already running, hot-sync changed files instantly
+        // Wait strictly for AI generation to complete before mounting full source and starting server
+        if (isGenerating) return
+
+        // If the dev server is ALREADY running, hot-sync file changes without restarting
         if (isServerRunningRef.current) {
             const prevFiles = prevFilesRef.current
             prevFilesRef.current = filesByPath // Update ref immediately to prevent re-triggers
@@ -1146,22 +1157,20 @@ declare module "next/image" {
             return
         }
 
-        // For initial boot: wait for AI to finish generating
-        if (isGenerating) return
-
         const startServer = async () => {
             try {
-                // Wait for Phase A (npm install) to complete
+                // Wait for any active dependency installation or re-installation to finish
                 if (installPromiseRef.current) {
                     await installPromiseRef.current
                 }
 
-                if (!depsInstalledRef.current) {
-                    console.warn("[wc-boot] Dependencies not installed, cannot start server")
+                // If package.json is missing or failed, abort server start
+                if (!installedDepsHashRef.current) {
+                    console.warn("[wc-boot] Dependencies failed to install, aborting server boot")
                     return
                 }
 
-                // Mount all source files (overwrite the minimal set from Phase A)
+                // Mount all source files
                 const filesWithLock = await injectLockfile(filesByPath)
                 await webcontainer.mount(buildWebContainerTree(filesWithLock, virtualFolders))
                 prevFilesRef.current = filesByPath
@@ -1169,16 +1178,16 @@ declare module "next/image" {
 
                 // Determine start command
                 const pkgJsonContent = filesByPath["package.json"] ?? ""
-                let startCommand = ["npm", "run", "dev"]
-                let startLog = "$ npm run dev"
+                let startCommand = ["pnpm", "run", "dev"]
+                let startLog = "$ pnpm run dev"
 
                 if (pkgJsonContent) {
                     try {
                         const parsedPkg = JSON.parse(pkgJsonContent)
                         if (parsedPkg.scripts) {
                             if (!parsedPkg.scripts.dev && parsedPkg.scripts.start) {
-                                startCommand = ["npm", "start"]
-                                startLog = "$ npm start"
+                                startCommand = ["pnpm", "start"]
+                                startLog = "$ pnpm start"
                             } else if (!parsedPkg.scripts.dev && !parsedPkg.scripts.start) {
                                 startCommand = ["node", "index.js"]
                                 startLog = "$ node index.js"
@@ -1205,14 +1214,14 @@ declare module "next/image" {
                                 devErrorTimeout = setTimeout(() => {
                                     handleBuildError(devErrorBuffer)
                                     devErrorBuffer = ""
-                                }, 2000)
+                                }, 3000)
                             } else if (devErrorBuffer) {
                                 devErrorBuffer += text
                                 if (devErrorTimeout) clearTimeout(devErrorTimeout)
                                 devErrorTimeout = setTimeout(() => {
                                     handleBuildError(devErrorBuffer)
                                     devErrorBuffer = ""
-                                }, 2000)
+                                }, 3000)
                             }
                         },
                     })
